@@ -191,6 +191,8 @@ namespace
 
         tracking_info_type get_tracked_collection_info(rsComm_t& _conn, const fs::path& _p)
         {
+            log::rule_engine::debug("in get_tracked_collection_info");
+
             tracking_info_type info;
 
             std::string gql = "select META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE where COLL_NAME = '";
@@ -225,11 +227,13 @@ namespace
 
         bool is_tracked_collection(rsComm_t& _conn, const fs::path& _p)
         {
+            log::rule_engine::debug("in is_tracked_collection");
+
             std::string gql = "select META_COLL_ATTR_NAME where COLL_NAME = '";
             gql += _p;
             gql += "' and META_COLL_ATTR_NAME = '";
             gql += maximum_object_count_key;
-            gql + "'"; 
+            gql += "'"; 
 
             for (auto&& row : irods::query{&_conn, gql}) {
                 return true;
@@ -269,8 +273,8 @@ namespace
 
                 const auto path = boost::any_cast<std::string>(*args_iter);
 
-                std::string objects = "0";
-                std::string bytes = "0";
+                std::string objects;
+                std::string bytes;
 
                 std::string gql = "select count(DATA_NAME), sum(DATA_SIZE) where COLL_NAME = '";
                 gql += path;
@@ -281,17 +285,17 @@ namespace
                 auto& rei = util::get_rei(_effect_handler);
 
                 for (auto&& row : irods::query{rei.rsComm, gql}) {
-                    if (!row[0].empty()) { objects = row[0]; }
-                    if (!row[1].empty()) { bytes = row[1]; }
+                    objects = row[0];
+                    bytes = row[1];
                 }
 
                 const auto max_objects = std::to_string(boost::any_cast<std::uint64_t>(*++args_iter));
                 const auto max_bytes = std::to_string(boost::any_cast<std::uint64_t>(*++args_iter));
 
-                fs::server::set_metadata(*rei.rsComm, path, {maximum_object_count_key, max_objects});
+                fs::server::set_metadata(*rei.rsComm, path, {maximum_object_count_key,       max_objects});
                 fs::server::set_metadata(*rei.rsComm, path, {maximum_data_size_in_bytes_key, max_bytes});
-                fs::server::set_metadata(*rei.rsComm, path, {maximum_object_count_key, objects});
-                fs::server::set_metadata(*rei.rsComm, path, {maximum_object_count_key, bytes});
+                fs::server::set_metadata(*rei.rsComm, path, {current_object_count_key,       objects.empty() ? "0" : objects});
+                fs::server::set_metadata(*rei.rsComm, path, {current_data_size_in_bytes_key, bytes.empty() ? "0" : bytes});
             }
             catch (const std::exception& e)
             {
@@ -361,14 +365,14 @@ namespace
                 auto* input = util::get_input_object_ptr<dataObjInp_t>(_rule_arguments);
                 auto& rei = util::get_rei(_effect_handler);
 
-                if (!fs::server::is_data_object(*rei.rsComm, input->objPath)) {
+                if (!fs::server::exists(*rei.rsComm, input->objPath)) {
                     for (auto tracked_collection = util::get_tracked_parent_collection(*rei.rsComm, input->objPath);
                          tracked_collection;
                          tracked_collection = util::get_tracked_parent_collection(*rei.rsComm, tracked_collection->parent_path()))
                     {
                         const auto tracked_info = util::get_tracked_collection_info(*rei.rsComm, *tracked_collection);
                         util::throw_if_maximum_count_violation(tracked_info, 1);
-                        util::throw_if_maximum_size_in_bytes_violation(tracked_info, fs::server::data_object_size(*rei.rsComm, input->objPath));
+                        util::throw_if_maximum_size_in_bytes_violation(tracked_info, input->dataSize);
                     }
                 }
             }
