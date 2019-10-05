@@ -1,3 +1,4 @@
+#include "optional"
 #include <irods/irods_plugin_context.hpp>
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_re_serialization.hpp>
@@ -13,29 +14,42 @@
 #include <irods/dataObjInpOut.h>
 #include <irods/rcMisc.h>
 #include <irods/rodsError.h>
+#include <irods/rodsErrorTable.h>
 
+#include <boost/any.hpp>
 #include <boost/filesystem.hpp>
 
-#include <irods/rodsErrorTable.h>
 #include <json.hpp>
 
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <array>
 #include <algorithm>
 #include <iterator>
 #include <functional>
+#include <list>
+#include <optional>
+#include <unordered_map>
 
 namespace
 {
     namespace fs = irods::experimental::filesystem;
 
     // clang-format off
-    using json = nlohmann::json;
-    using log  = irods::experimental::log;
+    using json               = nlohmann::json;
+    using log                = irods::experimental::log;
+    using tracking_info_type = std::unordered_map<std::string, std::uint64_t>;
     // clang-format on
 
+    struct logical_quotas_violation
+        : public std::runtime_error
+    {
+        using std::runtime_error::runtime_error;
+    };
+
     // clang-format off
+    // TODO This must be configurable.
     const char* maximum_object_count_key       = "logical_quotas::maximum_object_count";
     const char* maximum_data_size_in_bytes_key = "logical_quotas::maximum_data_size_in_bytes";
     const char* current_object_count_key       = "logical_quotas::current_object_count";
@@ -130,6 +144,9 @@ namespace
         template <typename T>
         T get_input_object(std::list<boost::any>& _rule_arguments, int _index = 0)
         {
+            log::rule_engine::debug({{"rule_engine_plugin", "logical_quotas"},
+                                     {"rule_engine_plugin_function", __func__},
+                                     {"arg::_index", std::to_string(_index)}});
             return boost::any_cast<T>(*std::next(std::begin(_rule_arguments), _index + 2));
         }
 
@@ -171,6 +188,66 @@ namespace
 
             return util::concat("l1desc {dataObjInp->objPath: ", path, ", bytesWritten: ", bytes, '}');
         }
+
+        tracking_info_type get_tracked_collection_info(rsComm_t& _conn, const fs::path& _p)
+        {
+            tracking_info_type info;
+
+            std::string gql = "select META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE where COLL_NAME = '";
+            gql += _p;
+            gql += "'";
+
+            for (auto&& row : irods::query{&_conn, gql}) {
+                // clang-format off
+                if      (maximum_object_count_key == row[0])       { info[maximum_object_count_key] = std::stoull(row[1]); }
+                else if (maximum_data_size_in_bytes_key == row[0]) { info[maximum_data_size_in_bytes_key] = std::stoull(row[1]); }
+                else if (current_object_count_key == row[0])       { info[current_object_count_key] = std::stoull(row[1]); }
+                else if (current_data_size_in_bytes_key == row[0]) { info[current_data_size_in_bytes_key] = std::stoull(row[1]); }
+                // clang-format on
+            }
+
+            return info;
+        }
+
+        void throw_if_maximum_count_violation(const tracking_info_type& _tracking_info, std::uint64_t _delta)
+        {
+            if (_tracking_info.at(current_object_count_key) + _delta > _tracking_info.at(maximum_object_count_key)) {
+                throw logical_quotas_violation{"Policy Violation: Adding object exceeds maximum number of objects limit"};
+            }
+        }
+
+        void throw_if_maximum_size_in_bytes_violation(const tracking_info_type& _tracking_info, std::uint64_t _delta)
+        {
+            if (_tracking_info.at(current_data_size_in_bytes_key) + _delta > _tracking_info.at(maximum_data_size_in_bytes_key)) {
+                throw logical_quotas_violation{"Policy Violation: Adding object exceeds maximum data size in bytes limit"};
+            }
+        }
+
+        bool is_tracked_collection(rsComm_t& _conn, const fs::path& _p)
+        {
+            std::string gql = "select META_COLL_ATTR_NAME where COLL_NAME = '";
+            gql += _p;
+            gql += "' and META_COLL_ATTR_NAME = '";
+            gql += maximum_object_count_key;
+            gql + "'"; 
+
+            for (auto&& row : irods::query{&_conn, gql}) {
+                return true;
+            }
+
+            return false;
+        }
+
+        std::optional<fs::path> get_tracked_parent_collection(rsComm_t& _conn, fs::path _p)
+        {
+            for (; !_p.empty(); _p = _p.parent_path()) {
+                if (is_tracked_collection(_conn, _p)) {
+                    return _p;
+                }
+            }
+
+            return std::nullopt;
+        }
     } // namespace util
 
     //
@@ -181,11 +258,16 @@ namespace
     {
         irods::error logical_quotas_init(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
         {
+            // clang-format off
+            log::rule_engine::debug({{"rule_engine_plugin", "logical_quotas"},
+                                     {"rule_engine_plugin_function", __func__}});
+            // clang-format on
+
             try
             {
-                auto path = util::get_input_object<std::string>(_rule_arguments);
+                auto args_iter = std::begin(_rule_arguments);
 
-                log::rule_engine::debug({{"path", path}});
+                const auto path = boost::any_cast<std::string>(*args_iter);
 
                 std::string objects = "0";
                 std::string bytes = "0";
@@ -194,21 +276,17 @@ namespace
                 gql += path;
                 gql += "' || like '";
                 gql += path;
-                gql += "/%";
+                gql += "/%'";
 
                 auto& rei = util::get_rei(_effect_handler);
 
                 for (auto&& row : irods::query{rei.rsComm, gql}) {
-                    objects = row[0];
-                    bytes = row[1];
+                    if (!row[0].empty()) { objects = row[0]; }
+                    if (!row[1].empty()) { bytes = row[1]; }
                 }
-                log::rule_engine::debug({{"# of objects", objects},
-                                         {"# of bytes", bytes}});
 
-                auto max_objects = util::get_input_object<std::string>(_rule_arguments, 1);
-                auto max_bytes = util::get_input_object<std::string>(_rule_arguments, 2);
-                log::rule_engine::debug({{"max # of objects", max_objects},
-                                         {"max # of bytes", max_bytes}});
+                const auto max_objects = std::to_string(boost::any_cast<std::uint64_t>(*++args_iter));
+                const auto max_bytes = std::to_string(boost::any_cast<std::uint64_t>(*++args_iter));
 
                 fs::server::set_metadata(*rei.rsComm, path, {maximum_object_count_key, max_objects});
                 fs::server::set_metadata(*rei.rsComm, path, {maximum_data_size_in_bytes_key, max_bytes});
@@ -226,6 +304,11 @@ namespace
         
         irods::error logical_quotas_remove(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
         {
+            // clang-format off
+            log::rule_engine::debug({{"rule_engine_plugin", "logical_quotas"},
+                                     {"rule_engine_plugin_function", __func__}});
+            // clang-format on
+
             try
             {
                 //auto coll_path = util::get_input_object_ptr<std::string>(_rule_arguments);
@@ -274,12 +357,26 @@ namespace
 
         irods::error pep_api_data_obj_put_pre(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
         {
-            try
-            {
-                //auto* input = util::get_input_object_ptr<dataObjInp_t>(_rule_arguments);
+            try {
+                auto* input = util::get_input_object_ptr<dataObjInp_t>(_rule_arguments);
+                auto& rei = util::get_rei(_effect_handler);
+
+                if (!fs::server::is_data_object(*rei.rsComm, input->objPath)) {
+                    for (auto tracked_collection = util::get_tracked_parent_collection(*rei.rsComm, input->objPath);
+                         tracked_collection;
+                         tracked_collection = util::get_tracked_parent_collection(*rei.rsComm, tracked_collection->parent_path()))
+                    {
+                        const auto tracked_info = util::get_tracked_collection_info(*rei.rsComm, *tracked_collection);
+                        util::throw_if_maximum_count_violation(tracked_info, 1);
+                        util::throw_if_maximum_size_in_bytes_violation(tracked_info, fs::server::data_object_size(*rei.rsComm, input->objPath));
+                    }
+                }
             }
-            catch (const std::exception& e)
-            {
+            catch (const logical_quotas_violation& e) {
+                util::log_exception_message(e.what(), _effect_handler);
+                return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
+            }
+            catch (const std::exception& e) {
                 util::log_exception_message(e.what(), _effect_handler);
                 return ERROR(RE_RUNTIME_ERROR, e.what());
             }
@@ -565,9 +662,26 @@ namespace
 
             log::rule_engine::debug({{"function", __func__}, {"json_arguments", json_args.dump()}});
 
-            // TODO This function only supports the following operations:
+            // This function only supports the following operations:
             // - logical_quotas_init
             // - logical_quotas_remove
+
+            if (const auto op = json_args.at("operation").get<std::string>(); op == "logical_quotas_init") {
+                std::list<boost::any> args{
+                    json_args.at("collection").get<std::string>(),
+                    json_args.at("maximum_number_of_objects").get<std::uint64_t>(),
+                    json_args.at("maximum_size_in_bytes").get<std::uint64_t>()
+                };
+
+                return handler::logical_quotas_init(args, _effect_handler);
+            }
+            else if (op == "logical_quotas_remove") {
+                std::list<boost::any> args;
+                return handler::logical_quotas_remove(args, _effect_handler);
+            }
+            else {
+                return ERROR(INVALID_OPERATION, "Invalid operation [" + op + ']');
+            }
         }
         catch (const json::parse_error& e) {
             // clang-format off
