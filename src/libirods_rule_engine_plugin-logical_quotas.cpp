@@ -44,19 +44,38 @@ namespace
     using tracking_info_type = std::unordered_map<std::string, std::uint64_t>;
     // clang-format on
 
-    struct logical_quotas_violation
+    struct logical_quotas_violation final
         : public std::runtime_error
     {
         using std::runtime_error::runtime_error;
     };
 
-    // clang-format off
-    // TODO This must be configurable.
-    const char* maximum_object_count_key       = "logical_quotas::maximum_object_count";
-    const char* maximum_data_size_in_bytes_key = "logical_quotas::maximum_data_size_in_bytes";
-    const char* current_object_count_key       = "logical_quotas::current_object_count";
-    const char* current_data_size_in_bytes_key = "logical_quotas::current_data_size_in_bytes";
-    // clang-format on
+    class attributes final
+    {
+    public:
+        explicit attributes(const std::string& _namespace)
+            : maximum_object_count_{_namespace + "::maximum_object_count"}
+            , maximum_data_size_in_bytes_{_namespace + "::maximum_data_size_in_bytes"}
+            , current_object_count_{_namespace + "::current_object_count"}
+            , current_data_size_in_bytes_{_namespace + "::current_data_size_in_bytes"}
+        {
+        }
+
+        // clang-format off
+        const std::string& maximum_object_count() const       { return maximum_object_count_; }
+        const std::string& maximum_data_size_in_bytes() const { return maximum_data_size_in_bytes_; }
+        const std::string& current_object_count() const       { return current_object_count_; }
+        const std::string& current_data_size_in_bytes() const { return current_data_size_in_bytes_; }
+        // clang-format on
+
+    private:
+        std::string maximum_object_count_;
+        std::string maximum_data_size_in_bytes_;
+        std::string current_object_count_;
+        std::string current_data_size_in_bytes_;
+    };
+
+    std::unordered_map<std::string, attributes> attribute_map;
 
     // This is a "sorted" list of the supported PEPs.
     // This will allow us to do binary search on the list for lookups.
@@ -137,7 +156,7 @@ namespace
             return boost::any_cast<T*>(*std::next(std::begin(_rule_arguments), _index + 2));
         }
 
-        tracking_info_type get_tracked_collection_info(rsComm_t& _conn, const fs::path& _p)
+        tracking_info_type get_tracked_collection_info(rsComm_t& _conn, const attributes& _attrs, const fs::path& _p)
         {
             log::rule_engine::debug("in get_tracked_collection_info");
 
@@ -149,38 +168,38 @@ namespace
 
             for (auto&& row : irods::query{&_conn, gql}) {
                 // clang-format off
-                if      (maximum_object_count_key == row[0])       { info[maximum_object_count_key] = std::stoull(row[1]); }
-                else if (maximum_data_size_in_bytes_key == row[0]) { info[maximum_data_size_in_bytes_key] = std::stoull(row[1]); }
-                else if (current_object_count_key == row[0])       { info[current_object_count_key] = std::stoull(row[1]); }
-                else if (current_data_size_in_bytes_key == row[0]) { info[current_data_size_in_bytes_key] = std::stoull(row[1]); }
+                if      (_attrs.maximum_object_count() == row[0])       { info[_attrs.maximum_object_count()] = std::stoull(row[1]); }
+                else if (_attrs.maximum_data_size_in_bytes() == row[0]) { info[_attrs.maximum_data_size_in_bytes()] = std::stoull(row[1]); }
+                else if (_attrs.current_object_count() == row[0])       { info[_attrs.current_object_count()] = std::stoull(row[1]); }
+                else if (_attrs.current_data_size_in_bytes() == row[0]) { info[_attrs.current_data_size_in_bytes()] = std::stoull(row[1]); }
                 // clang-format on
             }
 
             return info;
         }
 
-        void throw_if_maximum_count_violation(const tracking_info_type& _tracking_info, std::uint64_t _delta)
+        void throw_if_maximum_count_violation(const attributes& _attrs, const tracking_info_type& _tracking_info, std::uint64_t _delta)
         {
-            if (_tracking_info.at(current_object_count_key) + _delta > _tracking_info.at(maximum_object_count_key)) {
+            if (_tracking_info.at(_attrs.current_object_count()) + _delta > _tracking_info.at(_attrs.maximum_object_count())) {
                 throw logical_quotas_violation{"Policy Violation: Adding object exceeds maximum number of objects limit"};
             }
         }
 
-        void throw_if_maximum_size_in_bytes_violation(const tracking_info_type& _tracking_info, std::uint64_t _delta)
+        void throw_if_maximum_size_in_bytes_violation(const attributes& _attrs, const tracking_info_type& _tracking_info, std::uint64_t _delta)
         {
-            if (_tracking_info.at(current_data_size_in_bytes_key) + _delta > _tracking_info.at(maximum_data_size_in_bytes_key)) {
+            if (_tracking_info.at(_attrs.current_data_size_in_bytes()) + _delta > _tracking_info.at(_attrs.maximum_data_size_in_bytes())) {
                 throw logical_quotas_violation{"Policy Violation: Adding object exceeds maximum data size in bytes limit"};
             }
         }
 
-        bool is_tracked_collection(rsComm_t& _conn, const fs::path& _p)
+        bool is_tracked_collection(rsComm_t& _conn, const attributes& _attrs, const fs::path& _p)
         {
             log::rule_engine::debug("in is_tracked_collection");
 
             std::string gql = "select META_COLL_ATTR_NAME where COLL_NAME = '";
             gql += _p;
             gql += "' and META_COLL_ATTR_NAME = '";
-            gql += maximum_object_count_key;
+            gql += _attrs.maximum_object_count();
             gql += "'"; 
 
             for (auto&& row : irods::query{&_conn, gql}) {
@@ -190,10 +209,10 @@ namespace
             return false;
         }
 
-        std::optional<fs::path> get_tracked_parent_collection(rsComm_t& _conn, fs::path _p)
+        std::optional<fs::path> get_tracked_parent_collection(rsComm_t& _conn, const attributes& _attrs, fs::path _p)
         {
             for (; !_p.empty(); _p = _p.parent_path()) {
-                if (is_tracked_collection(_conn, _p)) {
+                if (is_tracked_collection(_conn, _attrs, _p)) {
                     return _p;
                 }
             }
@@ -220,14 +239,28 @@ namespace
             return {objects, bytes};
         }
 
-        template <typename Function>
-        void for_each_tracked_collection(rsComm_t& _conn, fs::path _collection, Function _func)
+        void update_data_object_count_and_size(rsComm_t& _conn,
+                                               const attributes& _attrs,
+                                               const fs::path& _collection,
+                                               const tracking_info_type& _info,
+                                               std::uint64_t _data_objects_delta,
+                                               std::uint64_t _size_in_bytes_delta)
         {
-            for (auto tracked_collection = util::get_tracked_parent_collection(_conn, _collection);
+            const auto new_object_count = std::to_string(_info.at(_attrs.current_object_count()) - _data_objects_delta);
+            fs::server::set_metadata(_conn, _collection, {_attrs.current_object_count(), new_object_count});
+
+            const auto new_size_in_bytes = std::to_string(_info.at(_attrs.current_data_size_in_bytes()) - _size_in_bytes_delta);
+            fs::server::set_metadata(_conn, _collection, {_attrs.current_data_size_in_bytes(), new_size_in_bytes});
+        }
+
+        template <typename Function>
+        void for_each_tracked_collection(rsComm_t& _conn, const attributes& _attrs, fs::path _collection, Function _func)
+        {
+            for (auto tracked_collection = util::get_tracked_parent_collection(_conn, _attrs, _collection);
                  tracked_collection;
-                 tracked_collection = util::get_tracked_parent_collection(_conn, tracked_collection->parent_path()))
+                 tracked_collection = util::get_tracked_parent_collection(_conn, _attrs, tracked_collection->parent_path()))
             {
-                auto tracked_info = util::get_tracked_collection_info(_conn, *tracked_collection);
+                auto tracked_info = util::get_tracked_collection_info(_conn, _attrs, *tracked_collection);
                 _func(*tracked_collection, tracked_info);
             }
         }
@@ -239,7 +272,9 @@ namespace
 
     namespace handler
     {
-        irods::error logical_quotas_init(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
+        irods::error logical_quotas_init(const std::string& _instance_name,
+                                         std::list<boost::any>& _rule_arguments,
+                                         irods::callback& _effect_handler)
         {
             // clang-format off
             log::rule_engine::debug({{"rule_engine_plugin", "logical_quotas"},
@@ -249,7 +284,6 @@ namespace
             try
             {
                 auto args_iter = std::begin(_rule_arguments);
-
                 const auto path = boost::any_cast<std::string>(*args_iter);
 
                 std::string objects;
@@ -270,11 +304,12 @@ namespace
 
                 const auto max_objects = std::to_string(boost::any_cast<std::uint64_t>(*++args_iter));
                 const auto max_bytes = std::to_string(boost::any_cast<std::uint64_t>(*++args_iter));
+                const auto& attrs = attribute_map.at(_instance_name);
 
-                fs::server::set_metadata(*rei.rsComm, path, {maximum_object_count_key,       max_objects});
-                fs::server::set_metadata(*rei.rsComm, path, {maximum_data_size_in_bytes_key, max_bytes});
-                fs::server::set_metadata(*rei.rsComm, path, {current_object_count_key,       objects.empty() ? "0" : objects});
-                fs::server::set_metadata(*rei.rsComm, path, {current_data_size_in_bytes_key, bytes.empty() ? "0" : bytes});
+                fs::server::set_metadata(*rei.rsComm, path, {attrs.maximum_object_count(),       max_objects});
+                fs::server::set_metadata(*rei.rsComm, path, {attrs.maximum_data_size_in_bytes(), max_bytes});
+                fs::server::set_metadata(*rei.rsComm, path, {attrs.current_object_count(),       objects.empty() ? "0" : objects});
+                fs::server::set_metadata(*rei.rsComm, path, {attrs.current_data_size_in_bytes(), bytes.empty() ? "0" : bytes});
             }
             catch (const std::exception& e)
             {
@@ -285,7 +320,9 @@ namespace
             return SUCCESS();
         }
         
-        irods::error logical_quotas_remove(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
+        irods::error logical_quotas_remove(const std::string& _instance_name,
+                                           std::list<boost::any>& _rule_arguments,
+                                           irods::callback& _effect_handler)
         {
             // clang-format off
             log::rule_engine::debug({{"rule_engine_plugin", "logical_quotas"},
@@ -297,7 +334,6 @@ namespace
                 //auto coll_path = util::get_input_object_ptr<std::string>(_rule_arguments);
                 //auto max_number_of_objects = util::get_input_object_ptr<std::string>(_rule_arguments, 1);
                 //auto max_size_in_bytes = util::get_input_object_ptr<std::string>(_rule_arguments, 2);
-
             }
             catch (const std::exception& e)
             {
@@ -308,11 +344,35 @@ namespace
             return SUCCESS();
         }
         
-        irods::error pep_api_data_obj_copy_pre(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
+        irods::error pep_api_data_obj_copy_pre(const std::string& _instance_name,
+                                               std::list<boost::any>& _rule_arguments,
+                                               irods::callback& _effect_handler)
         {
             try
             {
-                //auto* input = util::get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
+                auto* input = util::get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
+                auto& rei = util::get_rei(_effect_handler);
+                auto& conn = *rei.rsComm;
+                const auto& attrs = attribute_map.at(_instance_name);
+
+                util::for_each_tracked_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs, input](auto&, const auto& _info) {
+                    if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
+                        util::throw_if_maximum_count_violation(attrs, _info, 1);
+                        util::throw_if_maximum_size_in_bytes_violation(attrs, _info, fs::server::data_object_size(conn, input->srcDataObjInp.objPath));
+                    }
+                    else if (fs::server::is_collection(status)) {
+                        const auto [objects, bytes] = util::compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
+                        util::throw_if_maximum_count_violation(attrs, _info, objects);
+                        util::throw_if_maximum_size_in_bytes_violation(attrs, _info, bytes);
+                    }
+                    else {
+                        throw logical_quotas_violation{"Logical Quotas Policy: Invalid object type"};
+                    }
+                });
+            }
+            catch (const logical_quotas_violation& e) {
+                util::log_exception_message(e.what(), _effect_handler);
+                return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
             }
             catch (const std::exception& e)
             {
@@ -323,11 +383,29 @@ namespace
             return CODE(RULE_ENGINE_CONTINUE);
         }
 
-        irods::error pep_api_data_obj_copy_post(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
+        irods::error pep_api_data_obj_copy_post(const std::string& _instance_name,
+                                                std::list<boost::any>& _rule_arguments,
+                                                irods::callback& _effect_handler)
         {
             try
             {
-                //auto* input = util::get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
+                auto* input = util::get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
+                auto& rei = util::get_rei(_effect_handler);
+                auto& conn = *rei.rsComm;
+                const auto& attrs = attribute_map.at(_instance_name);
+
+                util::for_each_tracked_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
+                    if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
+                        util::update_data_object_count_and_size(conn, attrs, _collection, _info, 1, fs::server::data_object_size(conn, input->srcDataObjInp.objPath));
+                    }
+                    else if (fs::server::is_collection(status)) {
+                        const auto [objects, bytes] = util::compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
+                        util::update_data_object_count_and_size(conn, attrs, _collection, _info, objects, bytes);
+                    }
+                    else {
+                        throw logical_quotas_violation{"Logical Quotas Policy: Invalid object type"};
+                    }
+                });
             }
             catch (const std::exception& e)
             {
@@ -338,7 +416,9 @@ namespace
             return CODE(RULE_ENGINE_CONTINUE);
         }
 
-        irods::error pep_api_data_obj_put_pre(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
+        irods::error pep_api_data_obj_put_pre(const std::string& _instance_name,
+                                              std::list<boost::any>& _rule_arguments,
+                                              irods::callback& _effect_handler)
         {
             try {
                 auto* input = util::get_input_object_ptr<dataObjInp_t>(_rule_arguments);
@@ -346,9 +426,11 @@ namespace
                 auto& conn = *rei.rsComm;
 
                 if (!fs::server::exists(*rei.rsComm, input->objPath)) {
-                    util::for_each_tracked_collection(conn, input->objPath, [input](auto&, auto& _info) {
-                        util::throw_if_maximum_count_violation(_info, 1);
-                        util::throw_if_maximum_size_in_bytes_violation(_info, input->dataSize);
+                    const auto& attrs = attribute_map.at(_instance_name);
+
+                    util::for_each_tracked_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
+                        util::throw_if_maximum_count_violation(attrs, _info, 1);
+                        util::throw_if_maximum_size_in_bytes_violation(attrs, _info, input->dataSize);
                     });
                 }
             }
@@ -364,20 +446,19 @@ namespace
             return CODE(RULE_ENGINE_CONTINUE);
         }
 
-        irods::error pep_api_data_obj_put_post(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
+        irods::error pep_api_data_obj_put_post(const std::string& _instance_name,
+                                               std::list<boost::any>& _rule_arguments,
+                                               irods::callback& _effect_handler)
         {
             try
             {
                 auto* input = util::get_input_object_ptr<dataObjInp_t>(_rule_arguments);
                 auto& rei = util::get_rei(_effect_handler);
                 auto& conn = *rei.rsComm;
+                const auto& attrs = attribute_map.at(_instance_name);
 
-                util::for_each_tracked_collection(conn, input->objPath, [&conn, input](const auto& _collection, auto& _info) {
-                    const auto new_object_count = std::to_string(_info[current_object_count_key] + 1);
-                    fs::server::set_metadata(conn, _collection, {current_object_count_key, new_object_count});
-
-                    const auto new_size_in_bytes = std::to_string(_info[current_data_size_in_bytes_key] + input->dataSize);
-                    fs::server::set_metadata(conn, _collection, {current_data_size_in_bytes_key, new_size_in_bytes});
+                util::for_each_tracked_collection(conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
+                    util::update_data_object_count_and_size(conn, attrs, _collection, _info, 1, input->dataSize);
                 });
             }
             catch (const std::exception& e)
@@ -389,11 +470,13 @@ namespace
             return CODE(RULE_ENGINE_CONTINUE);
         }
 
-        irods::error pep_api_data_obj_rename_pre(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
+        irods::error pep_api_data_obj_rename_pre(const std::string& _instance_name,
+                                                 std::list<boost::any>& _rule_arguments,
+                                                 irods::callback& _effect_handler)
         {
             try
             {
-                //auto* input = util::get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
+                auto* input = util::get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
             }
             catch (const std::exception& e)
             {
@@ -404,11 +487,13 @@ namespace
             return CODE(RULE_ENGINE_CONTINUE);
         }
 
-        irods::error pep_api_data_obj_rename_post(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
+        irods::error pep_api_data_obj_rename_post(const std::string& _instance_name,
+                                                  std::list<boost::any>& _rule_arguments,
+                                                  irods::callback& _effect_handler)
         {
             try
             {
-                //auto* input = util::get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
+                auto* input = util::get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
             }
             catch (const std::exception& e)
             {
@@ -419,49 +504,77 @@ namespace
             return CODE(RULE_ENGINE_CONTINUE);
         }
 
-        irods::error pep_api_data_obj_unlink_pre(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
-        {
-            try
-            {
-                //auto* input = util::get_input_object_ptr<dataObjInp_t>(_rule_arguments);
-            }
-            catch (const std::exception& e)
-            {
-                util::log_exception_message(e.what(), _effect_handler);
-                return ERROR(RE_RUNTIME_ERROR, e.what());
-            }
-
-            return CODE(RULE_ENGINE_CONTINUE);
-        }
-
-        irods::error pep_api_data_obj_unlink_post(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
-        {
-            try
-            {
-                //auto* input = util::get_input_object_ptr<dataObjInp_t>(_rule_arguments);
-            }
-            catch (const std::exception& e)
-            {
-                util::log_exception_message(e.what(), _effect_handler);
-                return ERROR(RE_RUNTIME_ERROR, e.what());
-            }
-
-            return CODE(RULE_ENGINE_CONTINUE);
-        }
-
-        class pep_api_rm_coll
+        class pep_api_data_obj_unlink final
         {
         public:
-            static irods::error pre(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
+            static irods::error pre(const std::string& _instance_name,
+                                    std::list<boost::any>& _rule_arguments,
+                                    irods::callback& _effect_handler)
+            {
+                try
+                {
+                    auto* input = util::get_input_object_ptr<dataObjInp_t>(_rule_arguments);
+                    auto& rei = util::get_rei(_effect_handler);
+                    auto& conn = *rei.rsComm;
+                    const auto& attrs = attribute_map.at(_instance_name);
+
+                    if (auto tracked_collection = util::get_tracked_parent_collection(conn, attrs, input->objPath); tracked_collection) {
+                        size_in_bytes_ = fs::server::data_object_size(conn, input->objPath);
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    util::log_exception_message(e.what(), _effect_handler);
+                    return ERROR(RE_RUNTIME_ERROR, e.what());
+                }
+
+                return CODE(RULE_ENGINE_CONTINUE);
+            }
+
+            static irods::error post(const std::string& _instance_name,
+                                     std::list<boost::any>& _rule_arguments,
+                                     irods::callback& _effect_handler)
+            {
+                try
+                {
+                    auto* input = util::get_input_object_ptr<dataObjInp_t>(_rule_arguments);
+                    auto& rei = util::get_rei(_effect_handler);
+                    auto& conn = *rei.rsComm;
+                    const auto& attrs = attribute_map.at(_instance_name);
+
+                    util::for_each_tracked_collection(conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
+                        util::update_data_object_count_and_size(conn, attrs, _collection, _info, -1, -size_in_bytes_);
+                    });
+                }
+                catch (const std::exception& e)
+                {
+                    util::log_exception_message(e.what(), _effect_handler);
+                    return ERROR(RE_RUNTIME_ERROR, e.what());
+                }
+
+                return CODE(RULE_ENGINE_CONTINUE);
+            }
+
+        private:
+            inline static std::uint64_t size_in_bytes_ = 0;
+        };
+
+        class pep_api_rm_coll final
+        {
+        public:
+            static irods::error pre(const std::string& _instance_name,
+                                    std::list<boost::any>& _rule_arguments,
+                                    irods::callback& _effect_handler)
             {
                 try
                 {
                     auto* input = util::get_input_object_ptr<collInp_t>(_rule_arguments);
                     auto& rei = util::get_rei(_effect_handler);
                     auto& conn = *rei.rsComm;
+                    const auto& attrs = attribute_map.at(_instance_name);
 
-                    if (auto tracked_collection = util::get_tracked_parent_collection(conn, input->collName); tracked_collection) {
-                        auto info = util::get_tracked_collection_info(conn, *tracked_collection);
+                    if (auto tracked_collection = util::get_tracked_parent_collection(conn, attrs, input->collName); tracked_collection) {
+                        auto info = util::get_tracked_collection_info(conn, attrs, *tracked_collection);
                         std::tie(data_objects_, size_in_bytes_) = util::compute_data_object_count_and_size(conn, input->collName);
                     }
                 }
@@ -474,20 +587,19 @@ namespace
                 return CODE(RULE_ENGINE_CONTINUE);
             }
 
-            static irods::error post(std::list<boost::any>& _rule_arguments, irods::callback& _effect_handler)
+            static irods::error post(const std::string& _instance_name,
+                                     std::list<boost::any>& _rule_arguments,
+                                     irods::callback& _effect_handler)
             {
                 try
                 {
                     auto* input = util::get_input_object_ptr<collInp_t>(_rule_arguments);
                     auto& rei = util::get_rei(_effect_handler);
                     auto& conn = *rei.rsComm;
+                    const auto& attrs = attribute_map.at(_instance_name);
 
-                    util::for_each_tracked_collection(conn, input->collName, [&conn, input](const auto& _collection, auto& _info) {
-                        const auto new_object_count = std::to_string(_info[current_object_count_key] - data_objects_);
-                        fs::server::set_metadata(conn, _collection, {current_object_count_key, new_object_count});
-
-                        const auto new_size_in_bytes = std::to_string(_info[current_data_size_in_bytes_key] - size_in_bytes_);
-                        fs::server::set_metadata(conn, _collection, {current_data_size_in_bytes_key, new_size_in_bytes});
+                    util::for_each_tracked_collection(conn, attrs, input->collName, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
+                        util::update_data_object_count_and_size(conn, attrs, _collection, _info, -data_objects_, -size_in_bytes_);
                     });
                 }
                 catch (const std::exception& e)
@@ -546,19 +658,12 @@ namespace
         }
 
         try {
-            // Iterate over the list of rule engine plugins until the Passthrough REP is found.
-            //for (const auto& re : config.at(irods::CFG_PLUGIN_CONFIGURATION_KW).at(irods::PLUGIN_TYPE_RULE_ENGINE)) {
-                //if (_instance_name == re.at(irods::CFG_INSTANCE_NAME_KW).get<std::string>()) {
-                    // Fill the "pep_configs" plugin variable with objects containing the values
-                    // defined in the "return_codes_for_peps" configuration. Each object in the list
-                    // will contain a regular expression and a code.
-                    //for (const auto& e : re.at(irods::CFG_PLUGIN_SPECIFIC_CONFIGURATION_KW).at("return_codes_for_peps")) {
-                        //pep_configs[_instance_name].push_back({std::regex{e.at("regex").get<std::string>()}, e.at("code").get<int>()});
-                    //}
-
+            for (const auto& re : config.at(irods::CFG_PLUGIN_CONFIGURATION_KW).at(irods::PLUGIN_TYPE_RULE_ENGINE)) {
+                if (_instance_name == re.at(irods::CFG_INSTANCE_NAME_KW).get<std::string>()) {
+                    attribute_map.insert_or_assign(_instance_name, attributes{re.at(irods::CFG_PLUGIN_SPECIFIC_CONFIGURATION_KW).at("namespace").get<std::string>()});
                     return SUCCESS();
-                //}
-            //}
+                }
+            }
         }
         catch (const std::exception& e) {
             // clang-format off
@@ -609,7 +714,7 @@ namespace
 
         constexpr auto next_int = [] { static int i = 0; return i++; };
 
-        using handler_t = std::function<irods::error(std::list<boost::any>&, irods::callback&)>;
+        using handler_t = std::function<irods::error(const std::string&, std::list<boost::any>&, irods::callback&)>;
 
         static const std::map<std::string, handler_t> handlers{
 #if 0
@@ -634,8 +739,8 @@ namespace
             {peps[next_int()], handler::pep_api_data_obj_put_pre},
             {peps[next_int()], handler::pep_api_data_obj_rename_post},
             {peps[next_int()], handler::pep_api_data_obj_rename_pre},
-            {peps[next_int()], handler::pep_api_data_obj_unlink_post},
-            {peps[next_int()], handler::pep_api_data_obj_unlink_pre},
+            {peps[next_int()], handler::pep_api_data_obj_unlink::post},
+            {peps[next_int()], handler::pep_api_data_obj_unlink::pre},
             {peps[next_int()], handler::pep_api_rm_coll::post},
             {peps[next_int()], handler::pep_api_rm_coll::pre}
 #endif
@@ -645,7 +750,7 @@ namespace
 
         if (std::end(handlers) != iter) {
             log::rule_engine::debug("Found handler. Processing request ...");
-            return (iter->second)(_rule_arguments, _effect_handler);
+            return (iter->second)(_instance_name, _rule_arguments, _effect_handler);
         }
 
         const auto* msg = "[irods_rule_engine_plugin-logical_quotas][rule => %s] "
@@ -688,11 +793,11 @@ namespace
                     json_args.at("maximum_size_in_bytes").get<std::uint64_t>()
                 };
 
-                return handler::logical_quotas_init(args, _effect_handler);
+                return handler::logical_quotas_init(_instance_name, args, _effect_handler);
             }
             else if (op == "logical_quotas_remove") {
                 std::list<boost::any> args;
-                return handler::logical_quotas_remove(args, _effect_handler);
+                return handler::logical_quotas_remove(_instance_name, args, _effect_handler);
             }
             else {
                 return ERROR(INVALID_OPERATION, "Invalid operation [" + op + ']');
@@ -737,27 +842,6 @@ namespace
 
         return SUCCESS();
     }
-
-#if 0
-    irods::error exec_rule_text(const std::string& _instance_name,
-                               irods::default_re_ctx&,
-                               const std::string& _rule_text,
-                               msParamArray_t*,
-                               const std::string&,
-                               irods::callback _effect_handler)
-    {
-        return SUCCESS();
-    }
-
-    irods::error exec_rule_expression(const std::string& _instance_name,
-                                      irods::default_re_ctx&,
-                                      const std::string& _rule_text,
-                                      msParamArray_t*,
-                                      irods::callback _effect_handler)
-    {
-        return SUCCESS();
-    }
-#endif
 } // namespace (anonymous)
 
 //
@@ -795,7 +879,6 @@ pluggable_rule_engine* plugin_factory(const std::string& _instance_name,
                                                          irods::callback _effect_handler)
     {
         return exec_rule_text_impl(_instance_name, _rule_text, _effect_handler);
-        //return exec_rule_text(_instance_name, _ctx, _rule_text, _ms_params, _out_desc, _effect_handler);
     };
 
     const auto exec_rule_expression_wrapper = [_instance_name](irods::default_re_ctx& _ctx,
@@ -804,7 +887,6 @@ pluggable_rule_engine* plugin_factory(const std::string& _instance_name,
                                                                irods::callback _effect_handler)
     {
         return exec_rule_text_impl(_instance_name, _rule_text, _effect_handler);
-        //return exec_rule_expression(_instance_name, _ctx, _rule_text, _ms_params, _effect_handler);
     };
     // clang-format on
 
