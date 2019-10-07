@@ -81,7 +81,7 @@ namespace
     // This is a "sorted" list of the supported PEPs.
     // This will allow us to do binary search on the list for lookups.
     // TODO Need to add POSIX/streaming support (open, read, write, close).
-    constexpr std::array<const char*, 13> peps{
+    constexpr std::array<std::string_view, 13> peps{
         "logical_quotas_init",
         "logical_quotas_remove",
         "pep_api_data_obj_copy_post",
@@ -785,13 +785,7 @@ namespace
                              const std::string& _rule_name,
                              bool& _exists)
     {
-        auto b = std::cbegin(peps);
-        auto e = std::cend(peps);
-
-        _exists = std::binary_search(b, e, _rule_name.c_str(), [](const auto* _lhs, const auto* _rhs) {
-            return std::strcmp(_lhs, _rhs) < 0;
-        });
-
+        _exists = std::binary_search(std::begin(peps), std::end(peps), _rule_name);
         return SUCCESS();
     }
 
@@ -811,7 +805,7 @@ namespace
 
         using handler_t = std::function<irods::error(const std::string&, std::list<boost::any>&, irods::callback&)>;
 
-        static const std::map<std::string, handler_t> handlers{
+        static const std::map<std::string_view, handler_t> handlers{
 #if 0
             {peps[0], handler::logical_quotas_init},
             {peps[1], handler::logical_quotas_remove},
@@ -843,9 +837,7 @@ namespace
 #endif
         };
 
-        auto iter = handlers.find(_rule_name);
-
-        if (std::end(handlers) != iter) {
+        if (auto iter = handlers.find(_rule_name); std::end(handlers) != iter) {
             return (iter->second)(_instance_name, _rule_arguments, _effect_handler);
         }
 
