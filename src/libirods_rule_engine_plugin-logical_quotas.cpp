@@ -1,4 +1,3 @@
-#include "optional"
 #include <irods/irods_plugin_context.hpp>
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_re_serialization.hpp>
@@ -8,6 +7,8 @@
 #include <irods/irods_query.hpp>
 #include <irods/irods_logger.hpp>
 #include <irods/filesystem.hpp>
+#include <irods/irods_state_table.h>
+#include <irods/modAVUMetadata.h>
 #include <irods/msParam.h>
 #include <irods/objDesc.hpp>
 #include <irods/objInfo.h>
@@ -80,7 +81,7 @@ namespace
     // This is a "sorted" list of the supported PEPs.
     // This will allow us to do binary search on the list for lookups.
     // TODO Need to add POSIX/streaming support (open, read, write, close).
-    constexpr std::array<const char*, 12> peps{
+    constexpr std::array<const char*, 13> peps{
         "logical_quotas_init",
         "logical_quotas_remove",
         "pep_api_data_obj_copy_post",
@@ -91,31 +92,13 @@ namespace
         "pep_api_data_obj_rename_pre",
         "pep_api_data_obj_unlink_post",
         "pep_api_data_obj_unlink_pre",
+        "pep_api_mod_avu_metadata_pre",
         "pep_api_rm_coll_post",
         "pep_api_rm_coll_pre"
     };
 
     namespace util
     {
-        void concat_impl(std::string&)
-        {
-        }
-
-        template <typename Head, typename ...Tail>
-        void concat_impl(std::string& _dst, Head&& _head, Tail&&... _tail)
-        {
-            _dst += std::forward<Head>(_head);
-            concat_impl(_dst, std::forward<Tail>(_tail)...);
-        }
-
-        template <typename ...Args>
-        std::string concat(Args&&... _args)
-        {
-            std::string result;
-            concat_impl(result, std::forward<Args>(_args)...);
-            return result;
-        }
-
         ruleExecInfo_t& get_rei(irods::callback& _effect_handler)
         {
             ruleExecInfo_t* rei{};
@@ -194,8 +177,6 @@ namespace
 
         bool is_tracked_collection(rsComm_t& _conn, const attributes& _attrs, const fs::path& _p)
         {
-            log::rule_engine::debug("in is_tracked_collection");
-
             std::string gql = "select META_COLL_ATTR_NAME where COLL_NAME = '";
             gql += _p;
             gql += "' and META_COLL_ATTR_NAME = '";
@@ -214,6 +195,9 @@ namespace
             for (; !_p.empty(); _p = _p.parent_path()) {
                 if (is_tracked_collection(_conn, _attrs, _p)) {
                     return _p;
+                }
+                else if ("/" == _p) {
+                    break;
                 }
             }
 
@@ -477,6 +461,41 @@ namespace
             try
             {
                 auto* input = util::get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
+                auto& rei = util::get_rei(_effect_handler);
+                auto& conn = *rei.rsComm;
+                const auto& attrs = attribute_map.at(_instance_name);
+
+                {
+                    auto src_path = util::get_tracked_parent_collection(conn, attrs, input->srcDataObjInp.objPath);
+                    auto dst_path = util::get_tracked_parent_collection(conn, attrs, input->destDataObjInp.objPath);
+
+                    // Return if either of the following is true:
+                    // - The paths are std::nullopt.
+                    // - The paths are not std::nullopt and are equal.
+                    // - The destination path is a child of the source path.
+                    if (src_path == dst_path || (src_path && dst_path && *src_path < *dst_path)) {
+                        return CODE(RULE_ENGINE_CONTINUE);
+                    }
+                }
+
+                util::for_each_tracked_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
+                    if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
+                        util::throw_if_maximum_count_violation(attrs, _info, 1);
+                        util::throw_if_maximum_size_in_bytes_violation(attrs, _info, fs::server::data_object_size(conn, input->srcDataObjInp.objPath));
+                    }
+                    else if (fs::server::is_collection(status)) {
+                        const auto [objects, bytes] = util::compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
+                        util::throw_if_maximum_count_violation(attrs, _info, objects);
+                        util::throw_if_maximum_size_in_bytes_violation(attrs, _info, bytes);
+                    }
+                    else {
+                        throw logical_quotas_violation{"Logical Quotas Policy: Invalid object type"};
+                    }
+                });
+            }
+            catch (const logical_quotas_violation& e) {
+                util::log_exception_message(e.what(), _effect_handler);
+                return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
             }
             catch (const std::exception& e)
             {
@@ -494,6 +513,48 @@ namespace
             try
             {
                 auto* input = util::get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
+                auto& rei = util::get_rei(_effect_handler);
+                auto& conn = *rei.rsComm;
+                const auto& attrs = attribute_map.at(_instance_name);
+
+                {
+                    auto src_path = util::get_tracked_parent_collection(conn, attrs, input->srcDataObjInp.objPath);
+                    auto dst_path = util::get_tracked_parent_collection(conn, attrs, input->destDataObjInp.objPath);
+
+                    // Return if either of the following is true:
+                    // - The paths are std::nullopt.
+                    // - The paths are not std::nullopt and are equal.
+                    // - The destination path is a child of the source path.
+                    if (src_path == dst_path || (src_path && dst_path && *src_path < *dst_path)) {
+                        return CODE(RULE_ENGINE_CONTINUE);
+                    }
+                }
+
+                std::uint64_t objects = 0;
+                std::uint64_t bytes = 0;
+
+                if (const auto status = fs::server::status(conn, input->destDataObjInp.objPath); fs::server::is_data_object(status)) {
+                    objects = 1;
+                    bytes = fs::server::data_object_size(conn, input->destDataObjInp.objPath);
+                }
+                else if (fs::server::is_collection(status)) {
+                    std::tie(objects, bytes) = util::compute_data_object_count_and_size(conn, input->destDataObjInp.objPath);
+                }
+                else {
+                    throw logical_quotas_violation{"Logical Quotas Policy: Invalid object type"};
+                }
+
+                util::for_each_tracked_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
+                    util::update_data_object_count_and_size(conn, attrs, _collection, _info, objects, bytes);
+                });
+
+                util::for_each_tracked_collection(conn, attrs, input->srcDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
+                    util::update_data_object_count_and_size(conn, attrs, _collection, _info, objects, bytes);
+                });
+            }
+            catch (const logical_quotas_violation& e) {
+                util::log_exception_message(e.what(), _effect_handler);
+                return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
             }
             catch (const std::exception& e)
             {
@@ -558,6 +619,47 @@ namespace
         private:
             inline static std::uint64_t size_in_bytes_ = 0;
         };
+
+        irods::error pep_api_mod_avu_metadata_pre(const std::string& _instance_name,
+                                                  std::list<boost::any>& _rule_arguments,
+                                                  irods::callback& _effect_handler)
+        {
+            try
+            {
+                auto* input = util::get_input_object_ptr<modAVUMetadataInp_t>(_rule_arguments);
+                auto& rei = util::get_rei(_effect_handler);
+                auto& conn = *rei.rsComm;
+                const auto& attrs = attribute_map.at(_instance_name);
+
+                const auto is_rodsadmin = (conn.clientUser.authInfo.authFlag >= LOCAL_PRIV_USER_AUTH);
+                const auto is_modification = [input] {
+                    const auto ops = {"set", "add", "rm"};
+                    return std::any_of(std::begin(ops), std::end(ops), [input](std::string_view _op) {
+                        return _op == input->arg0;
+                    });
+                }();
+
+                if (!is_rodsadmin && is_modification) {
+                    const auto keys = {
+                        attrs.maximum_object_count(),
+                        attrs.maximum_data_size_in_bytes(),
+                        attrs.current_object_count(),
+                        attrs.current_data_size_in_bytes()
+                    };
+
+                    if (std::any_of(std::begin(keys), std::end(keys), [input](const auto& _key) { return _key == input->arg3; })) {
+                        return ERROR(SYS_INVALID_INPUT_PARAM, "Logical Quotas Policy: User not allowed to modify administrative metadata");
+                    }
+                }
+            }
+            catch (const std::exception& e)
+            {
+                util::log_exception_message(e.what(), _effect_handler);
+                return ERROR(RE_RUNTIME_ERROR, e.what());
+            }
+
+            return CODE(RULE_ENGINE_CONTINUE);
+        }
 
         class pep_api_rm_coll final
         {
@@ -683,23 +785,18 @@ namespace
                              const std::string& _rule_name,
                              bool& _exists)
     {
-        log::rule_engine::debug("In rule_exists");
-
         auto b = std::cbegin(peps);
         auto e = std::cend(peps);
 
         _exists = std::binary_search(b, e, _rule_name.c_str(), [](const auto* _lhs, const auto* _rhs) {
-            return strcmp(_lhs, _rhs) < 0;
+            return std::strcmp(_lhs, _rhs) < 0;
         });
-
-        log::rule_engine::debug({{"rule_name", _rule_name}, {"rule_exists", std::to_string(_exists)}});
 
         return SUCCESS();
     }
 
     irods::error list_rules(irods::default_re_ctx&, std::vector<std::string>& _rules)
     {
-        log::rule_engine::debug("In list_rules");
         _rules.insert(std::end(_rules), std::begin(peps), std::end(peps));
         return SUCCESS();
     }
@@ -710,8 +807,6 @@ namespace
                            std::list<boost::any>& _rule_arguments,
                            irods::callback _effect_handler)
     {
-        log::rule_engine::debug("In exec_rule");
-
         constexpr auto next_int = [] { static int i = 0; return i++; };
 
         using handler_t = std::function<irods::error(const std::string&, std::list<boost::any>&, irods::callback&)>;
@@ -728,8 +823,9 @@ namespace
             {peps[7], handler::pep_api_data_obj_rename_pre},
             {peps[8], handler::pep_api_data_obj_unlink_post},
             {peps[9], handler::pep_api_data_obj_unlink_pre},
-            {peps[10], handler::pep_api_rm_coll::post},
-            {peps[11], handler::pep_api_rm_coll::pre}
+            {peps[10], handler::pep_api_mod_avu_metadata_pre},
+            {peps[11], handler::pep_api_rm_coll::post},
+            {peps[12], handler::pep_api_rm_coll::pre}
 #else
             {peps[next_int()], handler::logical_quotas_init},
             {peps[next_int()], handler::logical_quotas_remove},
@@ -741,6 +837,7 @@ namespace
             {peps[next_int()], handler::pep_api_data_obj_rename_pre},
             {peps[next_int()], handler::pep_api_data_obj_unlink::post},
             {peps[next_int()], handler::pep_api_data_obj_unlink::pre},
+            {peps[next_int()], handler::pep_api_mod_avu_metadata_pre},
             {peps[next_int()], handler::pep_api_rm_coll::post},
             {peps[next_int()], handler::pep_api_rm_coll::pre}
 #endif
@@ -749,7 +846,6 @@ namespace
         auto iter = handlers.find(_rule_name);
 
         if (std::end(handlers) != iter) {
-            log::rule_engine::debug("Found handler. Processing request ...");
             return (iter->second)(_instance_name, _rule_arguments, _effect_handler);
         }
 
@@ -759,9 +855,7 @@ namespace
         rodsLog(LOG_ERROR, msg, _rule_name.c_str());
 
         // DO NOT BLOCK RULE ENGINE PLUGINS THAT FOLLOW THIS ONE!
-        //return CODE(RULE_ENGINE_CONTINUE);
-        log::rule_engine::debug("No handler found. Returned SUCCESS()");
-        return SUCCESS();
+        return CODE(RULE_ENGINE_CONTINUE);
     }
 
     irods::error exec_rule_text_impl(const std::string& _instance_name,
