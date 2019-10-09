@@ -24,6 +24,10 @@
 
 #include <json.hpp>
 
+#ifdef IRODS_USE_FMTLIB
+    #include <fmt/format.h>
+#endif // IRODS_USE_FMTLIB
+
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -160,9 +164,13 @@ namespace
 
         std::optional<std::string> get_collection_id(rsComm_t& _conn, fs::path _p)
         {
+#ifdef IRODS_USE_FMTLIB
+            const auto gql = fmt::format("select COLL_ID where COLL_NAME = '{}'", _p.c_str());
+#else
             std::string gql = "select COLL_ID where COLL_NAME = '";
             gql += _p;
             gql += "'";
+#endif // IRODS_USE_FMTLIB
 
             for (auto&& row : irods::query{&_conn, gql}) {
                 return row[0];
@@ -173,9 +181,13 @@ namespace
 
         std::optional<std::string> get_collection_user_id(rsComm_t& _conn, const std::string& _collection_id)
         {
+#ifdef IRODS_USE_FMTLIB
+            const auto gql = fmt::format("select COLL_ACCESS_USER_ID where COLL_ACCESS_COLL_ID = '{}' and COLL_ACCESS_NAME = 'own'", _collection_id);
+#else
             std::string gql = "select COLL_ACCESS_USER_ID where COLL_ACCESS_COLL_ID = '";
             gql += _collection_id;
             gql += "' and COLL_ACCESS_NAME = 'own'";
+#endif // IRODS_USE_FMTLIB
 
             for (auto&& row : irods::query{&_conn, gql}) {
                 return row[0];
@@ -199,9 +211,13 @@ namespace
                 return std::nullopt;
             }
 
+#ifdef IRODS_USE_FMTLIB
+            const auto gql = fmt::format("select USER_NAME where USER_ID = '{}'", *user_id);
+#else
             std::string gql = "select USER_NAME where USER_ID = '";
             gql += *user_id;
             gql += "'";
+#endif // IRODS_USE_FMTLIB
 
             for (auto&& row : irods::query{&_conn, gql}) {
                 return row[0];
@@ -220,9 +236,13 @@ namespace
         {
             tracking_info_type info;
 
+#ifdef IRODS_USE_FMTLIB
+            const auto gql = fmt::format("select META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE where COLL_NAME = '{}'", _p.c_str());
+#else
             std::string gql = "select META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE where COLL_NAME = '";
             gql += _p;
             gql += "'";
+#endif // IRODS_USE_FMTLIB
 
             for (auto&& row : irods::query{&_conn, gql}) {
                 // clang-format off
@@ -252,11 +272,17 @@ namespace
 
         bool is_tracked_collection(rsComm_t& _conn, const attributes& _attrs, const fs::path& _p)
         {
+#ifdef IRODS_USE_FMTLIB
+            const auto gql = fmt::format("select META_COLL_ATTR_NAME where COLL_NAME = '{}' and META_COLL_ATTR_NAME = '{}'",
+                                         _p.c_str(),
+                                         _attrs.maximum_object_count());
+#else
             std::string gql = "select META_COLL_ATTR_NAME where COLL_NAME = '";
             gql += _p;
             gql += "' and META_COLL_ATTR_NAME = '";
             gql += _attrs.maximum_object_count();
             gql += "'"; 
+#endif // IRODS_USE_FMTLIB
 
             for (auto&& row : irods::query{&_conn, gql}) {
                 return true;
@@ -284,11 +310,15 @@ namespace
             std::uint64_t objects = 0;
             std::uint64_t bytes = 0;
 
+#ifdef IRODS_USE_FMTLIB
+            const auto gql = fmt::format("select count(DATA_NAME), sum(DATA_SIZE) where COLL_NAME = '{0}' || like '{0}/%'", _p.c_str());
+#else
             std::string gql = "select count(DATA_NAME), sum(DATA_SIZE) where COLL_NAME = '";
             gql += _p;
             gql += "' || like '";
             gql += _p;
             gql += "/%'";
+#endif // IRODS_USE_FMTLIB
 
             for (auto&& row : irods::query{&_conn, gql}) {
                 objects = std::stoull(row[0]);
@@ -351,11 +381,15 @@ namespace
                     std::string objects;
                     std::string bytes;
 
+#ifdef IRODS_USE_FMTLIB
+                    const auto gql = fmt::format("select count(DATA_NAME), sum(DATA_SIZE) where COLL_NAME = '{0}' || like '{0}/%'", path);
+#else
                     std::string gql = "select count(DATA_NAME), sum(DATA_SIZE) where COLL_NAME = '";
                     gql += path;
                     gql += "' || like '";
                     gql += path;
                     gql += "/%'";
+#endif // IRODS_USE_FMTLIB
 
                     for (auto&& row : irods::query{rei.rsComm, gql}) {
                         objects = row[0];
