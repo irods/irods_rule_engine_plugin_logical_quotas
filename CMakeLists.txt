@@ -45,8 +45,10 @@ target_compile_options(${PLUGIN} PRIVATE -Wno-write-strings -nostdinc++)
 target_compile_definitions(${PLUGIN} PRIVATE ${IRODS_COMPILE_DEFINITIONS}
                                              RODS_SERVER
                                              IRODS_ENABLE_SYSLOG
-                                             IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API)
-target_include_directories(${PLUGIN} PRIVATE ${IRODS_INCLUDE_DIRS}
+                                             IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
+                                             IRODS_USE_FMTLIB)
+target_include_directories(${PLUGIN} PRIVATE /opt/fmt-6.0.0/include
+                                             ${IRODS_INCLUDE_DIRS}
                                              ${IRODS_EXTERNALS_FULLPATH_CLANG}/include/c++/v1
                                              ${IRODS_EXTERNALS_FULLPATH_BOOST}/include
                                              ${IRODS_EXTERNALS_FULLPATH_SPDLOG}/include
