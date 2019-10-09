@@ -3,6 +3,7 @@
 #include <irods/irods_re_serialization.hpp>
 #include <irods/irods_re_ruleexistshelper.hpp>
 #include <irods/irods_get_full_path_for_config_file.hpp>
+#include <irods/irods_get_l1desc.hpp>
 #include <irods/irods_at_scope_exit.hpp>
 #include <irods/irods_query.hpp>
 #include <irods/irods_logger.hpp>
@@ -142,7 +143,7 @@ namespace
 
             const std::string old_username = user.userName;
 
-            rstrcpy(user.userName, _username.data(), MAX_NAME_LEN);
+            rstrcpy(user.userName, _username.data(), NAME_LEN);
 
             irods::at_scope_exit at_scope_exit{[&user, &old_username] {
                 rstrcpy(user.userName, old_username.c_str(), MAX_NAME_LEN);
@@ -489,6 +490,69 @@ namespace
             return CODE(RULE_ENGINE_CONTINUE);
         }
 
+        class pep_api_data_obj_open final
+        {
+        public:
+            static irods::error pre(const std::string& _instance_name,
+                                    std::list<boost::any>& _rule_arguments,
+                                    irods::callback& _effect_handler)
+            {
+                try {
+                    auto* input = util::get_input_object_ptr<dataObjInp_t>(_rule_arguments);
+                    auto& rei = util::get_rei(_effect_handler);
+                    auto& conn = *rei.rsComm;
+                    const auto& attrs = attribute_map.at(_instance_name);
+
+                    if (!fs::server::exists(*rei.rsComm, input->objPath)) {
+                        increment_object_count_ = true;
+
+                        util::for_each_tracked_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
+                            util::throw_if_maximum_count_violation(attrs, _info, 1);
+                        });
+                    }
+                }
+                catch (const logical_quotas_violation_error& e) {
+                    util::log_exception_message(e.what(), _effect_handler);
+                    return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
+                }
+                catch (const std::exception& e) {
+                    util::log_exception_message(e.what(), _effect_handler);
+                    return ERROR(RE_RUNTIME_ERROR, e.what());
+                }
+
+                return CODE(RULE_ENGINE_CONTINUE);
+            }
+
+            static irods::error post(const std::string& _instance_name,
+                                     std::list<boost::any>& _rule_arguments,
+                                     irods::callback& _effect_handler)
+            {
+                try
+                {
+                    auto* input = util::get_input_object_ptr<dataObjInp_t>(_rule_arguments);
+                    auto& rei = util::get_rei(_effect_handler);
+                    auto& conn = *rei.rsComm;
+                    const auto& attrs = attribute_map.at(_instance_name);
+
+                    if (increment_object_count_) {
+                        util::for_each_tracked_collection(conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
+                            util::update_data_object_count_and_size(conn, attrs, _collection, _info, 1, 0);
+                        });
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    util::log_exception_message(e.what(), _effect_handler);
+                    return ERROR(RE_RUNTIME_ERROR, e.what());
+                }
+
+                return CODE(RULE_ENGINE_CONTINUE);
+            }
+
+        private:
+            inline static bool increment_object_count_ = false;
+        }; // class pep_api_data_obj_open
+
         class pep_api_data_obj_put final
         {
         public:
@@ -731,6 +795,62 @@ namespace
             inline static std::uint64_t size_in_bytes_ = 0;
         }; // class pep_api_data_obj_unlink
 
+        class pep_api_data_obj_write final
+        {
+        public:
+            static irods::error pre(const std::string& _instance_name,
+                                    std::list<boost::any>& _rule_arguments,
+                                    irods::callback& _effect_handler)
+            {
+                try
+                {
+                    auto* input = util::get_input_object_ptr<openedDataObjInp_t>(_rule_arguments);
+                    auto& rei = util::get_rei(_effect_handler);
+                    auto& conn = *rei.rsComm;
+                    const auto& attrs = attribute_map.at(_instance_name);
+                    const auto* path = irods::get_l1desc(input->l1descInx).dataObjInfo->objPath;
+
+                    util::for_each_tracked_collection(conn, attrs, path, [&conn, &attrs, input](const auto&, const auto& _info) {
+                        util::throw_if_maximum_size_in_bytes_violation(attrs, _info, input->bytesWritten);
+                    });
+                }
+                catch (const std::exception& e)
+                {
+                    util::log_exception_message(e.what(), _effect_handler);
+                    return ERROR(RE_RUNTIME_ERROR, e.what());
+                }
+
+                return CODE(RULE_ENGINE_CONTINUE);
+            }
+
+            static irods::error post(const std::string& _instance_name,
+                                     std::list<boost::any>& _rule_arguments,
+                                     irods::callback& _effect_handler)
+            {
+                try
+                {
+                    auto* input = util::get_input_object_ptr<openedDataObjInp_t>(_rule_arguments);
+                    auto& rei = util::get_rei(_effect_handler);
+                    auto& conn = *rei.rsComm;
+                    const auto& attrs = attribute_map.at(_instance_name);
+                    const auto* path = irods::get_l1desc(input->l1descInx).dataObjInfo->objPath;
+
+                    util::for_each_tracked_collection(conn, attrs, path, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
+                        util::update_data_object_count_and_size(conn, attrs, _collection, _info, 0, input->bytesWritten);
+                    });
+                }
+                catch (const std::exception& e)
+                {
+                    util::log_exception_message(e.what(), _effect_handler);
+                    return ERROR(RE_RUNTIME_ERROR, e.what());
+                }
+
+                return CODE(RULE_ENGINE_CONTINUE);
+            }
+
+        private:
+        }; // class pep_api_data_obj_write
+
         irods::error pep_api_mod_avu_metadata_pre(const std::string& _instance_name,
                                                   std::list<boost::any>& _rule_arguments,
                                                   irods::callback& _effect_handler)
@@ -922,26 +1042,38 @@ namespace
             {peps[1], handler::logical_quotas_remove},
             {peps[2], handler::pep_api_data_obj_copy_post},
             {peps[3], handler::pep_api_data_obj_copy_pre},
-            {peps[4], handler::pep_api_data_obj_put_post},
-            {peps[5], handler::pep_api_data_obj_put_pre},
-            {peps[6], handler::pep_api_data_obj_rename_post},
-            {peps[7], handler::pep_api_data_obj_rename_pre},
-            {peps[8], handler::pep_api_data_obj_unlink_post},
-            {peps[9], handler::pep_api_data_obj_unlink_pre},
-            {peps[10], handler::pep_api_mod_avu_metadata_pre},
-            {peps[11], handler::pep_api_rm_coll::post},
-            {peps[12], handler::pep_api_rm_coll::pre}
+            {peps[4], handler::pep_api_data_obj_open_and_stat_post},
+            {peps[5], handler::pep_api_data_obj_open_and_stat_pre},
+            {peps[6], handler::pep_api_data_obj_open_post},
+            {peps[7], handler::pep_api_data_obj_open_pre},
+            {peps[8], handler::pep_api_data_obj_put_post},
+            {peps[9], handler::pep_api_data_obj_put_pre},
+            {peps[10], handler::pep_api_data_obj_rename_post},
+            {peps[11], handler::pep_api_data_obj_rename_pre},
+            {peps[12], handler::pep_api_data_obj_unlink_post},
+            {peps[13], handler::pep_api_data_obj_unlink_pre},
+            {peps[14], handler::pep_api_data_obj_write_post},
+            {peps[15], handler::pep_api_data_obj_write_pre},
+            {peps[16], handler::pep_api_mod_avu_metadata_pre},
+            {peps[17], handler::pep_api_rm_coll::post},
+            {peps[18], handler::pep_api_rm_coll::pre}
 #else
             {peps[next_int()], handler::logical_quotas_init},
             {peps[next_int()], handler::logical_quotas_remove},
             {peps[next_int()], handler::pep_api_data_obj_copy_post},
             {peps[next_int()], handler::pep_api_data_obj_copy_pre},
+            {peps[next_int()], handler::pep_api_data_obj_open::post},
+            {peps[next_int()], handler::pep_api_data_obj_open::pre},
+            {peps[next_int()], handler::pep_api_data_obj_open::post},
+            {peps[next_int()], handler::pep_api_data_obj_open::pre},
             {peps[next_int()], handler::pep_api_data_obj_put::post},
             {peps[next_int()], handler::pep_api_data_obj_put::pre},
             {peps[next_int()], handler::pep_api_data_obj_rename_post},
             {peps[next_int()], handler::pep_api_data_obj_rename_pre},
             {peps[next_int()], handler::pep_api_data_obj_unlink::post},
             {peps[next_int()], handler::pep_api_data_obj_unlink::pre},
+            {peps[next_int()], handler::pep_api_data_obj_write::post},
+            {peps[next_int()], handler::pep_api_data_obj_write::pre},
             {peps[next_int()], handler::pep_api_mod_avu_metadata_pre},
             {peps[next_int()], handler::pep_api_rm_coll::post},
             {peps[next_int()], handler::pep_api_rm_coll::pre}
