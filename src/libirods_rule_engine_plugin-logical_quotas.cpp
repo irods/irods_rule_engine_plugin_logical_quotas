@@ -47,7 +47,7 @@ namespace
     // clang-format off
     using json               = nlohmann::json;
     using log                = irods::experimental::log;
-    using tracking_info_type = std::unordered_map<std::string, std::uint64_t>;
+    using tracking_info_type = std::unordered_map<std::string, std::int64_t>;
     // clang-format on
 
     struct logical_quotas_violation_error final
@@ -256,14 +256,14 @@ namespace
             return info;
         }
 
-        void throw_if_maximum_count_violation(const attributes& _attrs, const tracking_info_type& _tracking_info, std::uint64_t _delta)
+        void throw_if_maximum_count_violation(const attributes& _attrs, const tracking_info_type& _tracking_info, std::int64_t _delta)
         {
             if (_tracking_info.at(_attrs.current_object_count()) + _delta > _tracking_info.at(_attrs.maximum_object_count())) {
                 throw logical_quotas_violation_error{"Policy Violation: Adding object exceeds maximum number of objects limit"};
             }
         }
 
-        void throw_if_maximum_size_in_bytes_violation(const attributes& _attrs, const tracking_info_type& _tracking_info, std::uint64_t _delta)
+        void throw_if_maximum_size_in_bytes_violation(const attributes& _attrs, const tracking_info_type& _tracking_info, std::int64_t _delta)
         {
             if (_tracking_info.at(_attrs.current_data_size_in_bytes()) + _delta > _tracking_info.at(_attrs.maximum_data_size_in_bytes())) {
                 throw logical_quotas_violation_error{"Policy Violation: Adding object exceeds maximum data size in bytes limit"};
@@ -305,10 +305,10 @@ namespace
             return std::nullopt;
         }
 
-        std::tuple<std::uint64_t, std::uint64_t> compute_data_object_count_and_size(rsComm_t& _conn, fs::path _p)
+        std::tuple<std::int64_t, std::int64_t> compute_data_object_count_and_size(rsComm_t& _conn, fs::path _p)
         {
-            std::uint64_t objects = 0;
-            std::uint64_t bytes = 0;
+            std::int64_t objects = 0;
+            std::int64_t bytes = 0;
 
 #ifdef IRODS_USE_FMTLIB
             const auto gql = fmt::format("select count(DATA_NAME), sum(DATA_SIZE) where COLL_NAME = '{0}' || like '{0}/%'", _p.c_str());
@@ -332,13 +332,13 @@ namespace
                                                const attributes& _attrs,
                                                const fs::path& _collection,
                                                const tracking_info_type& _info,
-                                               std::uint64_t _data_objects_delta,
-                                               std::uint64_t _size_in_bytes_delta)
+                                               std::int64_t _data_objects_delta,
+                                               std::int64_t _size_in_bytes_delta)
         {
-            const auto new_object_count = std::to_string(_info.at(_attrs.current_object_count()) - _data_objects_delta);
+            const auto new_object_count = std::to_string(_info.at(_attrs.current_object_count()) + _data_objects_delta);
             fs::server::set_metadata(_conn, _collection, {_attrs.current_object_count(), new_object_count});
 
-            const auto new_size_in_bytes = std::to_string(_info.at(_attrs.current_data_size_in_bytes()) - _size_in_bytes_delta);
+            const auto new_size_in_bytes = std::to_string(_info.at(_attrs.current_data_size_in_bytes()) + _size_in_bytes_delta);
             fs::server::set_metadata(_conn, _collection, {_attrs.current_data_size_in_bytes(), new_size_in_bytes});
         }
 
@@ -396,8 +396,8 @@ namespace
                         bytes = row[1];
                     }
 
-                    const auto max_objects = std::to_string(boost::any_cast<std::uint64_t>(*++args_iter));
-                    const auto max_bytes = std::to_string(boost::any_cast<std::uint64_t>(*++args_iter));
+                    const auto max_objects = std::to_string(boost::any_cast<std::int64_t>(*++args_iter));
+                    const auto max_bytes = std::to_string(boost::any_cast<std::int64_t>(*++args_iter));
                     const auto& attrs = attribute_map.at(_instance_name);
 
                     fs::server::set_metadata(*rei.rsComm, path, {attrs.maximum_object_count(),       max_objects});
@@ -600,18 +600,18 @@ namespace
                     auto& conn = *rei.rsComm;
                     const auto& attrs = attribute_map.at(_instance_name);
 
-                    if (!fs::server::exists(*rei.rsComm, input->objPath)) {
-                        util::for_each_tracked_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
-                            util::throw_if_maximum_count_violation(attrs, _info, 1);
-                            util::throw_if_maximum_size_in_bytes_violation(attrs, _info, input->dataSize);
+                    if (fs::server::exists(*rei.rsComm, input->objPath)) {
+                        forced_overwrite_ = true;
+                        size_diff_ = fs::server::data_object_size(conn, input->objPath) - input->dataSize;
+
+                        util::for_each_tracked_collection(conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, auto& _info) {
+                            util::throw_if_maximum_size_in_bytes_violation(attrs, _info, size_diff_);
                         });
                     }
                     else {
-                        forced_overwrite_ = true;
-
-                        util::for_each_tracked_collection(conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, auto& _info) {
-                            size_diff_ = fs::server::data_object_size(conn, input->objPath) - input->dataSize;
-                            util::throw_if_maximum_size_in_bytes_violation(attrs, _info, size_diff_);
+                        util::for_each_tracked_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
+                            util::throw_if_maximum_count_violation(attrs, _info, 1);
+                            util::throw_if_maximum_size_in_bytes_violation(attrs, _info, input->dataSize);
                         });
                     }
                 }
@@ -739,8 +739,8 @@ namespace
                     }
                 }
 
-                std::uint64_t objects = 0;
-                std::uint64_t bytes = 0;
+                std::int64_t objects = 0;
+                std::int64_t bytes = 0;
 
                 if (const auto status = fs::server::status(conn, input->destDataObjInp.objPath); fs::server::is_data_object(status)) {
                     objects = 1;
@@ -826,7 +826,7 @@ namespace
             }
 
         private:
-            inline static std::uint64_t size_in_bytes_ = 0;
+            inline static std::int64_t size_in_bytes_ = 0;
         }; // class pep_api_data_obj_unlink
 
         class pep_api_data_obj_write final
@@ -979,8 +979,8 @@ namespace
             }
 
         private:
-            inline static std::uint64_t data_objects_ = 0;
-            inline static std::uint64_t size_in_bytes_ = 0;
+            inline static std::int64_t data_objects_ = 0;
+            inline static std::int64_t size_in_bytes_ = 0;
         }; // class pep_api_rm_coll
     } // namespace handler
 
@@ -1149,8 +1149,8 @@ namespace
             if (const auto op = json_args.at("operation").get<std::string>(); op == "logical_quotas_init") {
                 std::list<boost::any> args{
                     json_args.at("collection").get<std::string>(),
-                    json_args.at("maximum_number_of_objects").get<std::uint64_t>(),
-                    json_args.at("maximum_size_in_bytes").get<std::uint64_t>()
+                    json_args.at("maximum_number_of_objects").get<std::int64_t>(),
+                    json_args.at("maximum_size_in_bytes").get<std::int64_t>()
                 };
 
                 return handler::logical_quotas_init(_instance_name, args, _effect_handler);
