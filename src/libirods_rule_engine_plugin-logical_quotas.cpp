@@ -430,18 +430,31 @@ namespace
                 const auto path = boost::any_cast<std::string>(*args_iter);
 
                 auto& rei = util::get_rei(_effect_handler);
-                auto username = util::get_collection_username(*rei.rsComm, path);
+                auto& conn = *rei.rsComm;
+                auto username = util::get_collection_username(conn, path);
 
                 if (!username) {
+                    log::rule_engine::error(fmt::format("Could not find username for collection [{}]", path));
                     // TODO What should happen here?
+                    throw std::runtime_error{fmt::format("Logical Quotas Policy: No owner found for path [{}]", path)};
                 }
 
                 util::switch_user(rei, *username, [&] {
+                    const auto& attrs = attribute_map.at(_instance_name);
 
+                    if (!util::is_tracked_collection(conn, attrs, path)) {
+                        log::rule_engine::error(fmt::format("[{}] is not a tracked collection", path));
+                        // TODO Throw exception here.
+                        throw std::runtime_error{fmt::format("Logical Quotas Policy: [{}] is not a tracked collection", path)};
+                    }
+
+                    const auto info = util::get_tracked_collection_info(conn, attrs, path);
+
+                    fs::server::remove_metadata(conn, path, {attrs.maximum_object_count(),       std::to_string(info.at(attrs.maximum_object_count()))});
+                    fs::server::remove_metadata(conn, path, {attrs.maximum_data_size_in_bytes(), std::to_string(info.at(attrs.maximum_data_size_in_bytes()))});
+                    fs::server::remove_metadata(conn, path, {attrs.current_object_count(),       std::to_string(info.at(attrs.current_object_count()))});
+                    fs::server::remove_metadata(conn, path, {attrs.current_data_size_in_bytes(), std::to_string(info.at(attrs.current_data_size_in_bytes()))});
                 });
-                //auto coll_path = util::get_input_object_ptr<std::string>(_rule_arguments);
-                //auto max_number_of_objects = util::get_input_object_ptr<std::string>(_rule_arguments, 1);
-                //auto max_size_in_bytes = util::get_input_object_ptr<std::string>(_rule_arguments, 2);
             }
             catch (const std::exception& e)
             {
@@ -941,7 +954,6 @@ namespace
                     const auto& attrs = attribute_map.at(_instance_name);
 
                     if (auto tracked_collection = util::get_tracked_parent_collection(conn, attrs, input->collName); tracked_collection) {
-                        auto info = util::get_tracked_collection_info(conn, attrs, *tracked_collection);
                         std::tie(data_objects_, size_in_bytes_) = util::compute_data_object_count_and_size(conn, input->collName);
                     }
                 }
@@ -1156,7 +1168,10 @@ namespace
                 return handler::logical_quotas_init(_instance_name, args, _effect_handler);
             }
             else if (op == "logical_quotas_remove") {
-                std::list<boost::any> args;
+                std::list<boost::any> args{
+                    json_args.at("collection").get<std::string>(),
+                };
+
                 return handler::logical_quotas_remove(_instance_name, args, _effect_handler);
             }
             else {

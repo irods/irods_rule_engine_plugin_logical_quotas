@@ -3,8 +3,7 @@ from __future__ import print_function
 import os
 import sys
 import shutil
-
-from time import sleep
+import json
 
 if sys.version_info < (2, 7):
     import unittest2 as unittest
@@ -17,96 +16,242 @@ from .. import lib
 from .. import paths
 from ..configuration import IrodsConfig
 
-class Test_Rule_Engine_Plugin_Update_Collection_MTime(session.make_sessions_mixin([('otherrods', 'rods')], []), unittest.TestCase):
+class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('otherrods', 'rods')], []), unittest.TestCase):
 
     def setUp(self):
-        super(Test_Rule_Engine_Plugin_Update_Collection_MTime, self).setUp()
+        super(Test_Rule_Engine_Plugin_Logical_Quotas, self).setUp()
         self.admin = self.admin_sessions[0]
 
     def tearDown(self):
-        super(Test_Rule_Engine_Plugin_Update_Collection_MTime, self).tearDown()
+        super(Test_Rule_Engine_Plugin_Logical_Quotas, self).tearDown()
+
+#   @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+#   def test_posix_api(self):
+#       max_number_of_objects = 3
+#       max_size_in_bytes = 3000
+
+#       def f():
+#           pass
+
+#       self.run_test(f, self.admin.session_collection, max_number_of_objects, max_size_in_bytes)
+
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
-    def test_update_collection_mtime(self):
+    def test_copy_and_remove_data_object(self):
+        max_number_of_objects = 100
+        max_size_in_bytes = 10000
+
+        def f():
+            filenames = [
+                {'name': 'foo', 'size': 100},
+                {'name': 'bar', 'size': 1000},
+                {'name': 'baz', 'size': 1100}
+            ]
+
+            expected_number_of_objects = 0
+            expected_size = 0
+
+            for filename in filenames:
+                name = filename['name']
+                size = filename['size']
+                lib.make_file(name, size)
+
+                # Put a data object and check that the quota values for the collection
+                # increase appropriately.
+                self.admin.assert_icommand(['iput', name])
+                self.admin.assert_icommand(['ils', name], 'STDOUT', name)
+                os.remove(name)
+
+                # Increment the expected values.
+                expected_number_of_objects += 1
+                expected_size += size
+
+                # Check quotas.
+                values = self.get_logical_quotas_attribute_values(self.admin.session_collection)
+                self.assertEquals(values[self.current_number_of_objects_attribute()], expected_number_of_objects)
+                self.assertEquals(values[self.current_size_in_bytes_attribute()],     expected_size)
+
+            # Copy some of the data objects.
+            file_copies = [
+                {'source': 'foo', 'target': 'foo.copy', 'size': filenames[0]['size']},
+                {'source': 'baz', 'target': 'baz.copy', 'size': filenames[1]['size']}
+            ]
+
+            for filename in file_copies:
+                source = filename['source']
+                target = filename['target']
+                size = filename['size']
+
+                self.admin.assert_icommand(['icp', source, target])
+                self.admin.assert_icommand(['ils', target], 'STDOUT', target)
+
+                # Increment the expected values.
+                expected_number_of_objects += 1
+                expected_size += size
+
+                # Check quotas.
+                values = self.get_logical_quotas_attribute_values(self.admin.session_collection)
+                self.assertEquals(values[self.current_number_of_objects_attribute()], expected_number_of_objects)
+                self.assertEquals(values[self.current_size_in_bytes_attribute()],     expected_size)
+
+            for filename in filenames:
+                name = filename['name']
+                size = filename['size']
+
+                # Remove the recently added data object and check that the quota values for
+                # the collection decrease appropriately.
+                self.admin.assert_icommand(['irm', '-f', name])
+
+                # Increment the expected 
+                expected_number_of_objects -= 1
+                expected_size -= size
+
+                values = self.get_logical_quotas_attribute_values(self.admin.session_collection)
+                self.assertEquals(values[self.current_number_of_objects_attribute()], expected_number_of_objects)
+                self.assertEquals(values[self.current_size_in_bytes_attribute()],     expected_size)
+
+        self.run_test(f, self.admin.session_collection, max_number_of_objects, max_size_in_bytes)
+
+#   @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+#   def test_copy_and_remove_collection(self):
+#       max_number_of_objects = 3
+#       max_size_in_bytes = 3000
+
+#       def f():
+#           pass
+
+#       self.run_test(f, self.admin.session_collection, max_number_of_objects, max_size_in_bytes)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_put_and_remove_data_object(self):
+        max_number_of_objects = 3
+        max_size_in_bytes = 3000
+
+        def f():
+            filename = 'data_object.txt'
+            lib.make_file(filename, 1024)
+
+            # Put a data object and check that the quota values for the collection
+            # increase appropriately.
+            self.admin.assert_icommand(['iput', filename])
+            values = self.get_logical_quotas_attribute_values(self.admin.session_collection)
+            self.assertEquals(values[self.maximum_number_of_objects_attribute()], max_number_of_objects)
+            self.assertEquals(values[self.maximum_size_in_bytes_attribute()],     max_size_in_bytes)
+            self.assertEquals(values[self.current_number_of_objects_attribute()], 1)
+            self.assertEquals(values[self.current_size_in_bytes_attribute()],     1024)
+
+            # Remove the recently added data object and check that the quota values for
+            # the collection decrease appropriately.
+            self.admin.assert_icommand(['irm', '-f', filename])
+            values = self.get_logical_quotas_attribute_values(self.admin.session_collection)
+            self.assertEquals(values[self.current_number_of_objects_attribute()], 0)
+            self.assertEquals(values[self.current_size_in_bytes_attribute()],     0)
+
+            os.remove(filename)
+
+        self.run_test(f, self.admin.session_collection, max_number_of_objects, max_size_in_bytes)
+
+#   @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+#   def test_put_and_remove_collection(self):
+#       max_number_of_objects = 3
+#       max_size_in_bytes = 3000
+
+#       def f():
+#           pass
+
+#       self.run_test(f, self.admin.session_collection, max_number_of_objects, max_size_in_bytes)
+
+#   @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+#   def test_rename_and_remove_data_object(self):
+#       max_number_of_objects = 3
+#       max_size_in_bytes = 3000
+
+#       def f():
+#           pass
+
+#       self.run_test(f, self.admin.session_collection, max_number_of_objects, max_size_in_bytes)
+
+#   @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+#   def test_rename_and_remove_collection(self):
+#       max_number_of_objects = 3
+#       max_size_in_bytes = 3000
+
+#       def f():
+#           pass
+
+#       self.run_test(f, self.admin.session_collection, max_number_of_objects, max_size_in_bytes)
+
+    def run_test(self, do_test, collection, max_number_of_objects, max_size_in_bytes):
 	config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
-            self.enable_mtime_rep(config)
-            self.run_collection_pep_tests()
-            self.run_data_object_pep_tests()
-            self.run_irule_tests(config.server_config['plugin_configuration']['rule_engines'])
+            self.enable_rule_engine_plugin(config)
+            self.logical_quotas_init(collection, max_number_of_objects, max_size_in_bytes)
+            do_test()
+            self.logical_quotas_remove(collection)
 
-    def enable_mtime_rep(self, config):
-        # Add the MTime REP to the beginning of the rule engines list.
+    def enable_rule_engine_plugin(self, config, namespace=None):
         config.server_config['plugin_configuration']['rule_engines'].insert(0, {
-            'instance_name': 'irods_rule_engine_plugin-update_collection_mtime-instance',
-            'plugin_name': 'irods_rule_engine_plugin-update_collection_mtime',
-            'plugin_specific_configuration': {}
+            'instance_name': 'irods_rule_engine_plugin-logical_quotas-instance',
+            'plugin_name': 'irods_rule_engine_plugin-logical_quotas',
+            'plugin_specific_configuration': {
+                'namespace': self.logical_quotas_namespace() if namespace == None else namespace
+            }
         })
 
-        # Save the changes.
         lib.update_json_file_from_dict(config.server_config_path, config.server_config)
 
-    def run_collection_pep_tests(self):
-        collection = 'rep_mtime_col.d'
-        copied_collection = 'rep_mtime_col.copied.d'
+    def logical_quotas_namespace(self):
+        return 'irods::logical_quotas'
 
-        self.run_create_collection_test(collection)
-        self.run_copy_collection_test(collection, copied_collection)
-        self.run_remove_collection_test(collection)
+    def maximum_number_of_objects_attribute(self):
+        return self.logical_quotas_namespace() + '::maximum_object_count'
 
-    def run_data_object_pep_tests(self):
-        filename = 'rep_mtime_file.txt'
-        new_filename = 'rep_mtime_file.renamed.txt'
-        copied_filename = 'rep_mtime_file.copied.txt'
+    def maximum_size_in_bytes_attribute(self):
+        return self.logical_quotas_namespace() + '::maximum_data_size_in_bytes'
 
-        self.run_put_data_object_test(filename)
-        self.run_rename_data_object_test(filename, new_filename)
-        self.run_copy_data_object_test(new_filename, copied_filename)
-        self.run_remove_data_object_test(new_filename)
+    def current_number_of_objects_attribute(self):
+        return self.logical_quotas_namespace() + '::current_object_count'
 
-        os.remove(filename)
+    def current_size_in_bytes_attribute(self):
+        return self.logical_quotas_namespace() + '::current_data_size_in_bytes'
 
-    def run_irule_tests(self, rule_engines):
-        native_rep = 'irods_rule_engine_plugin-irods_rule_language'
+    def get_logical_quotas_attribute_values(self, collection):
+        query = '"select META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE where COLL_NAME = \'{0}\'"'.format(collection)
+        utf8_query_result_string, ec, rc = self.admin.run_icommand(['iquest', '%s=%s', query])
 
-        # Run this test only if the NREP is configured.
-        for re in rule_engines:
-            if re['plugin_name'] == native_rep:
-                msg = 'THIS SHOULD NOT PRODUCE AN ERROR!'
-                cmd = 'irule -r {0}-instance \'writeLine("stdout", "{1}")\' null ruleExecOut'.format(native_rep, msg)
-                self.admin.assert_icommand(cmd, 'STDOUT', msg)
-                break
+        attrs = [
+            self.maximum_number_of_objects_attribute(),
+            self.maximum_size_in_bytes_attribute(),
+            self.current_number_of_objects_attribute(),
+            self.current_size_in_bytes_attribute()
+        ]
 
-    def run_create_collection_test(self, collection):
-        self.run_test(lambda: self.admin.run_icommand(['imkdir', collection]))
+        quota_values = {}
 
-    def run_copy_collection_test(self, src_collection, dst_collection):
-        self.run_test(lambda: self.admin.run_icommand(['icp', src_collection, dst_collection]))
+        # Convert the utf-8 string to an ascii string.
+        # Split the string into rows and remove the last element (which will be an empty string).
+        for row in str(utf8_query_result_string).split('\n')[:-1]:
+            columns = row.split('=')
+            if columns[0] in attrs:
+                quota_values[columns[0]] = int(columns[1])
 
-    def run_remove_collection_test(self, collection):
-        self.run_test(lambda: self.admin.run_icommand(['irmdir', collection]))
+        return quota_values
 
-    def run_put_data_object_test(self, filename):
-        lib.make_file(filename, 1)
-        self.run_test(lambda: self.admin.run_icommand(['iput', filename]))
+    def exec_logical_quotas_operation(self, json_string):
+        self.admin.assert_icommand(['irule', '-r', 'irods_rule_engine_plugin-logical_quotas-instance', json_string, 'null', 'null'])
 
-    def run_rename_data_object_test(self, filename, new_filename):
-        self.run_test(lambda: self.admin.run_icommand(['imv', filename, new_filename]))
+    def logical_quotas_init(self, collection, max_number_of_objects, max_size_in_bytes):
+        self.exec_logical_quotas_operation(json.dumps({
+            'operation': 'logical_quotas_init',
+            'collection': collection,
+            'maximum_number_of_objects': max_number_of_objects,
+            'maximum_size_in_bytes': max_size_in_bytes
+        }))
 
-    def run_copy_data_object_test(self, src_filename, dst_filename):
-        self.run_test(lambda: self.admin.run_icommand(['icp', src_filename, dst_filename]))
-
-    def run_remove_data_object_test(self, filename):
-        self.run_test(lambda: self.admin.run_icommand(['irm', '-f', filename]))
-
-    def run_test(self, trigger_mtime_update_func):
-        old_mtime = self.get_mtime(self.admin.session_collection)
-        sleep(2) # Guarantees that the following operation produces a different mtime.
-        trigger_mtime_update_func()
-        self.assertTrue(self.get_mtime(self.admin.session_collection) != old_mtime)
-
-    def get_mtime(self, coll_path):
-        mtime, ec, rc = self.admin.run_icommand('iquest %s "select COLL_MODIFY_TIME where COLL_NAME = \'{0}\'"'.format(coll_path))
-        return int(mtime)
+    def logical_quotas_remove(self, collection):
+        self.exec_logical_quotas_operation(json.dumps({
+            'operation': 'logical_quotas_remove',
+            'collection': collection
+        }))
 
