@@ -46,7 +46,7 @@ still be allowed to process the same PEPs without any issues.
         "instance_name": "irods_rule_engine_plugin-logical_quotas-instance",
         "plugin_name": "irods_rule_engine_plugin-logical_quotas",
         "plugin_specific_configuration": {
-            "namespace": "logical_quotas"
+            "namespace": "irods::logical_quotas"
         }
     },
     
