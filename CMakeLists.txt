@@ -47,7 +47,7 @@ target_compile_definitions(${PLUGIN} PRIVATE ${IRODS_COMPILE_DEFINITIONS}
                                              IRODS_ENABLE_SYSLOG
                                              IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
                                              IRODS_USE_FMTLIB)
-target_include_directories(${PLUGIN} PRIVATE /opt/fmt-6.0.0/include
+target_include_directories(${PLUGIN} PRIVATE ${CMAKE_SOURCE_DIR}/fmt/include
                                              ${IRODS_INCLUDE_DIRS}
                                              ${IRODS_EXTERNALS_FULLPATH_CLANG}/include/c++/v1
                                              ${IRODS_EXTERNALS_FULLPATH_BOOST}/include

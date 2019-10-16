@@ -46,7 +46,14 @@ still be allowed to process the same PEPs without any issues.
         "instance_name": "irods_rule_engine_plugin-logical_quotas-instance",
         "plugin_name": "irods_rule_engine_plugin-logical_quotas",
         "plugin_specific_configuration": {
-            "namespace": "irods::logical_quotas"
+            "namespace": "irods::logical_quotas",
+            "metadata_attribute_names": {
+                "maximum_number_of_data_objects": "maximum_number_of_data_objects",
+                "maximum_data_size_in_bytes": "maximum_size_in_bytes",
+                "current_number_of_data_objects": "current_number_of_data_objects",
+                "current_data_size_in_bytes": "current_size_in_bytes"
+            },
+            "enforce": true
         }
     },
     
