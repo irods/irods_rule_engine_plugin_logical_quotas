@@ -23,6 +23,8 @@
 #include <boost/filesystem.hpp>
 
 #include <json.hpp>
+
+#define FMT_HEADER_ONLY
 #include <fmt/format.h>
 
 #include <stdexcept>
@@ -42,12 +44,12 @@ namespace
     namespace fs = irods::experimental::filesystem;
 
     // clang-format off
-    using json               = nlohmann::json;
     using log                = irods::experimental::log;
+    using json               = nlohmann::json;
     using tracking_info_type = std::unordered_map<std::string, std::int64_t>;
     // clang-format on
 
-    struct logical_quotas_violation_error final
+    struct logical_quotas_error final
         : public std::runtime_error
     {
         using std::runtime_error::runtime_error;
@@ -72,38 +74,37 @@ namespace
     class attributes final
     {
     public:
-        explicit attributes(const std::string& _namespace,
-                            const std::string& _maximum_number_of_data_objects,
-                            const std::string& _maximum_size_in_bytes,
-                            const std::string& _current_number_of_data_objects,
-                            const std::string& _current_size_in_bytes)
+        attributes(const std::string& _namespace,
+                   const std::string& _maximum_number_of_data_objects,
+                   const std::string& _maximum_size_in_bytes,
+                   const std::string& _total_number_of_data_objects,
+                   const std::string& _total_size_in_bytes)
             : maximum_number_of_data_objects_{fmt::format("{}::{}", _namespace, _maximum_number_of_data_objects)}
             , maximum_size_in_bytes_{fmt::format("{}::{}", _namespace, _maximum_size_in_bytes)}
-            , current_number_of_data_objects_{fmt::format("{}::{}", _namespace, _current_number_of_data_objects)}
-            , current_size_in_bytes_{fmt::format("{}::{}", _namespace, _current_size_in_bytes)}
+            , total_number_of_data_objects_{fmt::format("{}::{}", _namespace, _total_number_of_data_objects)}
+            , total_size_in_bytes_{fmt::format("{}::{}", _namespace, _total_size_in_bytes)}
         {
         }
 
         // clang-format off
         const std::string& maximum_number_of_data_objects() const { return maximum_number_of_data_objects_; }
         const std::string& maximum_size_in_bytes() const          { return maximum_size_in_bytes_; }
-        const std::string& current_number_of_data_objects() const { return current_number_of_data_objects_; }
-        const std::string& current_size_in_bytes() const          { return current_size_in_bytes_; }
+        const std::string& total_number_of_data_objects() const { return total_number_of_data_objects_; }
+        const std::string& total_size_in_bytes() const          { return total_size_in_bytes_; }
         // clang-format on
 
     private:
         std::string maximum_number_of_data_objects_;
         std::string maximum_size_in_bytes_;
-        std::string current_number_of_data_objects_;
-        std::string current_size_in_bytes_;
+        std::string total_number_of_data_objects_;
+        std::string total_size_in_bytes_;
     }; // class attributes
 
     class instance_config final
     {
     public:
-        instance_config(attributes _attrs, bool _enforce)
+        instance_config(attributes _attrs)
             : attrs_{std::move(_attrs)}
-            , enforce_{_enforce}
         {
         }
 
@@ -112,25 +113,26 @@ namespace
             return attrs_;
         }
 
-        bool enforce_quotas() const
-        {
-            return enforce_;
-        }
-
     private:
         class attributes attrs_;
-        bool enforce_;
     }; // class instance_config
 
     std::unordered_map<std::string, instance_config> instance_configs;
 
     // This is a "sorted" list of the supported PEPs.
     // This will allow us to do binary search on the list for lookups.
-    constexpr std::array<std::string_view, 21> peps{
+    constexpr std::array<std::string_view, 28> peps{
+        "logical_quotas_count_total_number_of_data_objects",
+        "logical_quotas_count_total_size_in_bytes",
+        "logical_quotas_recalculate_totals",
         "logical_quotas_set_maximum_number_of_data_objects",
         "logical_quotas_set_maximum_size_in_bytes",
-        "logical_quotas_stop_tracking_collection",
-        "logical_quotas_track_collection",
+        "logical_quotas_start_monitoring_collection",
+        "logical_quotas_stop_monitoring_collection",
+        "logical_quotas_unset_maximum_number_of_data_objects",
+        "logical_quotas_unset_maximum_size_in_bytes",
+        "logical_quotas_unset_total_number_of_data_objects",
+        "logical_quotas_unset_total_size_in_bytes",
         "pep_api_data_obj_copy_post",
         "pep_api_data_obj_copy_pre",
         "pep_api_data_obj_open_and_stat_post",
@@ -251,33 +253,38 @@ namespace
                 // clang-format off
                 if      (_attrs.maximum_number_of_data_objects() == row[0]) { info[_attrs.maximum_number_of_data_objects()] = std::stoull(row[1]); }
                 else if (_attrs.maximum_size_in_bytes() == row[0])          { info[_attrs.maximum_size_in_bytes()] = std::stoull(row[1]); }
-                else if (_attrs.current_number_of_data_objects() == row[0]) { info[_attrs.current_number_of_data_objects()] = std::stoull(row[1]); }
-                else if (_attrs.current_size_in_bytes() == row[0])          { info[_attrs.current_size_in_bytes()] = std::stoull(row[1]); }
+                else if (_attrs.total_number_of_data_objects() == row[0]) { info[_attrs.total_number_of_data_objects()] = std::stoull(row[1]); }
+                else if (_attrs.total_size_in_bytes() == row[0])          { info[_attrs.total_size_in_bytes()] = std::stoull(row[1]); }
                 // clang-format on
             }
 
             return info;
         }
 
-        void throw_if_maximum_count_violation(const attributes& _attrs, const tracking_info_type& _tracking_info, std::int64_t _delta)
+        void throw_if_maximum_number_of_data_objects_violation(const attributes& _attrs, const tracking_info_type& _tracking_info, std::int64_t _delta)
         {
-            if (_tracking_info.at(_attrs.current_number_of_data_objects()) + _delta > _tracking_info.at(_attrs.maximum_number_of_data_objects())) {
-                throw logical_quotas_violation_error{"Policy Violation: Adding object exceeds maximum number of objects limit"};
+            if (_tracking_info.find(_attrs.maximum_number_of_data_objects()) != std::end(_tracking_info)) {
+                if (_tracking_info.at(_attrs.total_number_of_data_objects()) + _delta > _tracking_info.at(_attrs.maximum_number_of_data_objects())) {
+                    throw logical_quotas_error{"Policy Violation: Adding object exceeds maximum number of objects limit"};
+                }
             }
         }
 
         void throw_if_maximum_size_in_bytes_violation(const attributes& _attrs, const tracking_info_type& _tracking_info, std::int64_t _delta)
         {
-            if (_tracking_info.at(_attrs.current_size_in_bytes()) + _delta > _tracking_info.at(_attrs.maximum_size_in_bytes())) {
-                throw logical_quotas_violation_error{"Policy Violation: Adding object exceeds maximum data size in bytes limit"};
+            if (_tracking_info.find(_attrs.maximum_size_in_bytes()) != std::end(_tracking_info)) {
+                if (_tracking_info.at(_attrs.total_size_in_bytes()) + _delta > _tracking_info.at(_attrs.maximum_size_in_bytes())) {
+                    throw logical_quotas_error{"Policy Violation: Adding object exceeds maximum data size in bytes limit"};
+                }
             }
         }
 
         bool is_tracked_collection(rsComm_t& _conn, const attributes& _attrs, const fs::path& _p)
         {
-            const auto gql = fmt::format("select META_COLL_ATTR_NAME where COLL_NAME = '{}' and META_COLL_ATTR_NAME = '{}'",
+            const auto gql = fmt::format("select META_COLL_ATTR_NAME where COLL_NAME = '{}' and META_COLL_ATTR_NAME = '{}' || = '{}'",
                                          _p.c_str(),
-                                         _attrs.maximum_number_of_data_objects());
+                                         _attrs.total_number_of_data_objects(),
+                                         _attrs.total_size_in_bytes());
 
             for (auto&& row : irods::query{&_conn, gql}) {
                 return true;
@@ -322,11 +329,15 @@ namespace
                                                std::int64_t _data_objects_delta,
                                                std::int64_t _size_in_bytes_delta)
         {
-            const auto new_object_count = std::to_string(_info.at(_attrs.current_number_of_data_objects()) + _data_objects_delta);
-            fs::server::set_metadata(_conn, _collection, {_attrs.current_number_of_data_objects(), new_object_count});
+            if (0 != _data_objects_delta) {
+                const auto new_object_count = std::to_string(_info.at(_attrs.total_number_of_data_objects()) + _data_objects_delta);
+                fs::server::set_metadata(_conn, _collection, {_attrs.total_number_of_data_objects(), new_object_count});
+            }
 
-            const auto new_size_in_bytes = std::to_string(_info.at(_attrs.current_size_in_bytes()) + _size_in_bytes_delta);
-            fs::server::set_metadata(_conn, _collection, {_attrs.current_size_in_bytes(), new_size_in_bytes});
+            if (0 != _size_in_bytes_delta) {
+                const auto new_size_in_bytes = std::to_string(_info.at(_attrs.total_size_in_bytes()) + _size_in_bytes_delta);
+                fs::server::set_metadata(_conn, _collection, {_attrs.total_size_in_bytes(), new_size_in_bytes});
+            }
         }
 
         template <typename Function>
@@ -348,7 +359,7 @@ namespace
 
     namespace handler
     {
-        irods::error logical_quotas_track_collection(const std::string& _instance_name,
+        irods::error logical_quotas_start_monitoring_collection(const std::string& _instance_name,
                                                      std::list<boost::any>& _rule_arguments,
                                                      irods::callback& _effect_handler)
         {
@@ -377,8 +388,8 @@ namespace
 
                     const auto& attrs = instance_configs.at(_instance_name).attributes();
 
-                    fs::server::set_metadata(*rei.rsComm, path, {attrs.current_number_of_data_objects(),  objects.empty() ? "0" : objects});
-                    fs::server::set_metadata(*rei.rsComm, path, {attrs.current_size_in_bytes(), bytes.empty() ? "0" : bytes});
+                    fs::server::set_metadata(*rei.rsComm, path, {attrs.total_number_of_data_objects(),  objects.empty() ? "0" : objects});
+                    fs::server::set_metadata(*rei.rsComm, path, {attrs.total_size_in_bytes(), bytes.empty() ? "0" : bytes});
                 });
             }
             catch (const std::exception& e)
@@ -390,7 +401,7 @@ namespace
             return SUCCESS();
         }
         
-        irods::error logical_quotas_stop_tracking_collection(const std::string& _instance_name,
+        irods::error logical_quotas_stop_monitoring_collection(const std::string& _instance_name,
                                                              std::list<boost::any>& _rule_arguments,
                                                              irods::callback& _effect_handler)
         {
@@ -418,10 +429,10 @@ namespace
 
                     try {
                         // clang-format off
-                        fs::server::remove_metadata(conn, path, {attrs.maximum_number_of_data_objects(),  std::to_string(info.at(attrs.maximum_number_of_data_objects()))});
-                        fs::server::remove_metadata(conn, path, {attrs.maximum_size_in_bytes(), std::to_string(info.at(attrs.maximum_size_in_bytes()))});
-                        fs::server::remove_metadata(conn, path, {attrs.current_number_of_data_objects(),  std::to_string(info.at(attrs.current_number_of_data_objects()))});
-                        fs::server::remove_metadata(conn, path, {attrs.current_size_in_bytes(), std::to_string(info.at(attrs.current_size_in_bytes()))});
+                        //fs::server::remove_metadata(conn, path, {attrs.maximum_number_of_data_objects(),  std::to_string(info.at(attrs.maximum_number_of_data_objects()))});
+                        //fs::server::remove_metadata(conn, path, {attrs.maximum_size_in_bytes(), std::to_string(info.at(attrs.maximum_size_in_bytes()))});
+                        fs::server::remove_metadata(conn, path, {attrs.total_number_of_data_objects(),  std::to_string(info.at(attrs.total_number_of_data_objects()))});
+                        fs::server::remove_metadata(conn, path, {attrs.total_size_in_bytes(), std::to_string(info.at(attrs.total_size_in_bytes()))});
                         // clang-format on
                     }
                     catch (const std::out_of_range& e) {
@@ -438,7 +449,81 @@ namespace
 
             return SUCCESS();
         }
-        
+
+        irods::error logical_quotas_count_total_number_of_data_objects(const std::string& _instance_name,
+                                                                       std::list<boost::any>& _rule_arguments,
+                                                                       irods::callback& _effect_handler)
+        {
+            try
+            {
+                auto args_iter = std::begin(_rule_arguments);
+                const auto path = boost::any_cast<std::string>(*args_iter);
+
+                auto& rei = util::get_rei(_effect_handler);
+                auto username = util::get_collection_username(*rei.rsComm, path);
+
+                if (!username) {
+                    throw std::runtime_error{fmt::format("Logical Quotas Policy: No owner found for path [{}]", path)};
+                }
+
+                util::switch_user(rei, *username, [&] {
+                    const auto gql = fmt::format("select count(DATA_NAME) where COLL_NAME = '{0}' || like '{0}/%'", path);
+                    std::string objects;
+
+                    for (auto&& row : irods::query{rei.rsComm, gql}) {
+                        objects = row[0];
+                    }
+
+                    const auto& attrs = instance_configs.at(_instance_name).attributes();
+                    fs::server::set_metadata(*rei.rsComm, path, {attrs.total_number_of_data_objects(),  objects.empty() ? "0" : objects});
+                });
+            }
+            catch (const std::exception& e)
+            {
+                util::log_exception_message(e.what(), _effect_handler);
+                return ERROR(RE_RUNTIME_ERROR, e.what());
+            }
+
+            return SUCCESS();
+        }
+
+        irods::error logical_quotas_count_total_size_in_bytes(const std::string& _instance_name,
+                                                              std::list<boost::any>& _rule_arguments,
+                                                              irods::callback& _effect_handler)
+        {
+            try
+            {
+                auto args_iter = std::begin(_rule_arguments);
+                const auto path = boost::any_cast<std::string>(*args_iter);
+
+                auto& rei = util::get_rei(_effect_handler);
+                auto username = util::get_collection_username(*rei.rsComm, path);
+
+                if (!username) {
+                    throw std::runtime_error{fmt::format("Logical Quotas Policy: No owner found for path [{}]", path)};
+                }
+
+                util::switch_user(rei, *username, [&] {
+                    const auto gql = fmt::format("select sum(DATA_SIZE) where COLL_NAME = '{0}' || like '{0}/%'", path);
+                    std::string bytes;
+
+                    for (auto&& row : irods::query{rei.rsComm, gql}) {
+                        bytes = row[1];
+                    }
+
+                    const auto& attrs = instance_configs.at(_instance_name).attributes();
+                    fs::server::set_metadata(*rei.rsComm, path, {attrs.total_size_in_bytes(), bytes.empty() ? "0" : bytes});
+                });
+            }
+            catch (const std::exception& e)
+            {
+                util::log_exception_message(e.what(), _effect_handler);
+                return ERROR(RE_RUNTIME_ERROR, e.what());
+            }
+
+            return SUCCESS();
+        }
+
         irods::error logical_quotas_set_maximum_number_of_data_objects(const std::string& _instance_name,
                                                                        std::list<boost::any>& _rule_arguments,
                                                                        irods::callback& _effect_handler)
@@ -452,13 +537,12 @@ namespace
                 auto username = util::get_collection_username(*rei.rsComm, path);
 
                 if (!username) {
-                    // TODO What should happen here?
+                    throw std::runtime_error{fmt::format("Logical Quotas Policy: No owner found for path [{}]", path)};
                 }
 
                 util::switch_user(rei, *username, [&] {
                     const auto max_objects = std::to_string(boost::any_cast<std::int64_t>(*++args_iter));
                     const auto& attrs = instance_configs.at(_instance_name).attributes();
-
                     fs::server::set_metadata(*rei.rsComm, path, {attrs.maximum_number_of_data_objects(), max_objects});
                 });
             }
@@ -484,13 +568,12 @@ namespace
                 auto username = util::get_collection_username(*rei.rsComm, path);
 
                 if (!username) {
-                    // TODO What should happen here?
+                    throw std::runtime_error{fmt::format("Logical Quotas Policy: No owner found for path [{}]", path)};
                 }
 
                 util::switch_user(rei, *username, [&] {
                     const auto max_bytes = std::to_string(boost::any_cast<std::int64_t>(*++args_iter));
                     const auto& attrs = instance_configs.at(_instance_name).attributes();
-
                     fs::server::set_metadata(*rei.rsComm, path, {attrs.maximum_size_in_bytes(), max_bytes});
                 });
             }
@@ -520,22 +603,22 @@ namespace
                 auto& conn = *rei.rsComm;
                 const auto& attrs = instance_config.attributes();
 
-                util::for_each_tracked_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs, input](auto&, const auto& _info) {
+                util::for_each_tracked_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs, input](auto& _collection, const auto& _info) {
                     if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
-                        util::throw_if_maximum_count_violation(attrs, _info, 1);
+                        util::throw_if_maximum_number_of_data_objects_violation(attrs, _info, 1);
                         util::throw_if_maximum_size_in_bytes_violation(attrs, _info, fs::server::data_object_size(conn, input->srcDataObjInp.objPath));
                     }
                     else if (fs::server::is_collection(status)) {
                         const auto [objects, bytes] = util::compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
-                        util::throw_if_maximum_count_violation(attrs, _info, objects);
+                        util::throw_if_maximum_number_of_data_objects_violation(attrs, _info, objects);
                         util::throw_if_maximum_size_in_bytes_violation(attrs, _info, bytes);
                     }
                     else {
-                        throw logical_quotas_violation_error{"Logical Quotas Policy: Invalid object type"};
+                        throw logical_quotas_error{"Logical Quotas Policy: Invalid object type"};
                     }
                 });
             }
-            catch (const logical_quotas_violation_error& e) {
+            catch (const logical_quotas_error& e) {
                 util::log_exception_message(e.what(), _effect_handler);
                 return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
             }
@@ -568,7 +651,7 @@ namespace
                         util::update_data_object_count_and_size(conn, attrs, _collection, _info, objects, bytes);
                     }
                     else {
-                        throw logical_quotas_violation_error{"Logical Quotas Policy: Invalid object type"};
+                        throw logical_quotas_error{"Logical Quotas Policy: Invalid object type"};
                     }
                 });
             }
@@ -600,12 +683,12 @@ namespace
 
                         if (instance_config.enforce_quotas()) {
                             util::for_each_tracked_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
-                                util::throw_if_maximum_count_violation(attrs, _info, 1);
+                                util::throw_if_maximum_number_of_data_objects_violation(attrs, _info, 1);
                             });
                         }
                     }
                 }
-                catch (const logical_quotas_violation_error& e) {
+                catch (const logical_quotas_error& e) {
                     util::log_exception_message(e.what(), _effect_handler);
                     return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
                 }
@@ -673,12 +756,12 @@ namespace
                     }
                     else if (instance_config.enforce_quotas()) {
                         util::for_each_tracked_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
-                            util::throw_if_maximum_count_violation(attrs, _info, 1);
+                            util::throw_if_maximum_number_of_data_objects_violation(attrs, _info, 1);
                             util::throw_if_maximum_size_in_bytes_violation(attrs, _info, input->dataSize);
                         });
                     }
                 }
-                catch (const logical_quotas_violation_error& e) {
+                catch (const logical_quotas_error& e) {
                     util::log_exception_message(e.what(), _effect_handler);
                     return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
                 }
@@ -758,20 +841,20 @@ namespace
 
                 util::for_each_tracked_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
                     if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
-                        util::throw_if_maximum_count_violation(attrs, _info, 1);
+                        util::throw_if_maximum_number_of_data_objects_violation(attrs, _info, 1);
                         util::throw_if_maximum_size_in_bytes_violation(attrs, _info, fs::server::data_object_size(conn, input->srcDataObjInp.objPath));
                     }
                     else if (fs::server::is_collection(status)) {
                         const auto [objects, bytes] = util::compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
-                        util::throw_if_maximum_count_violation(attrs, _info, objects);
+                        util::throw_if_maximum_number_of_data_objects_violation(attrs, _info, objects);
                         util::throw_if_maximum_size_in_bytes_violation(attrs, _info, bytes);
                     }
                     else {
-                        throw logical_quotas_violation_error{"Logical Quotas Policy: Invalid object type"};
+                        throw logical_quotas_error{"Logical Quotas Policy: Invalid object type"};
                     }
                 });
             }
-            catch (const logical_quotas_violation_error& e) {
+            catch (const logical_quotas_error& e) {
                 util::log_exception_message(e.what(), _effect_handler);
                 return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
             }
@@ -819,7 +902,7 @@ namespace
                     std::tie(objects, bytes) = util::compute_data_object_count_and_size(conn, input->destDataObjInp.objPath);
                 }
                 else {
-                    throw logical_quotas_violation_error{"Logical Quotas Policy: Invalid object type"};
+                    throw logical_quotas_error{"Logical Quotas Policy: Invalid object type"};
                 }
 
                 util::for_each_tracked_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
@@ -830,7 +913,7 @@ namespace
                     util::update_data_object_count_and_size(conn, attrs, _collection, _info, objects, bytes);
                 });
             }
-            catch (const logical_quotas_violation_error& e) {
+            catch (const logical_quotas_error& e) {
                 util::log_exception_message(e.what(), _effect_handler);
                 return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
             }
@@ -983,8 +1066,8 @@ namespace
                     const auto keys = {
                         attrs.maximum_number_of_data_objects(),
                         attrs.maximum_size_in_bytes(),
-                        attrs.current_number_of_data_objects(),
-                        attrs.current_size_in_bytes()
+                        attrs.total_number_of_data_objects(),
+                        attrs.total_size_in_bytes()
                     };
 
                     if (std::any_of(std::begin(keys), std::end(keys), [input](const auto& _key) { return _key == input->arg3; })) {
@@ -1104,13 +1187,11 @@ namespace
                     const auto& plugin_config = re.at(irods::CFG_PLUGIN_SPECIFIC_CONFIGURATION_KW);
                     const auto& attr_names = plugin_config.at("metadata_attribute_names");
 
-                    attributes attrs{plugin_config.at("namespace").get<std::string>(),
-                                     attr_names.at("maximum_number_of_data_objects").get<std::string>(),
-                                     attr_names.at("maximum_size_in_bytes").get<std::string>(),
-                                     attr_names.at("current_number_of_data_objects").get<std::string>(),
-                                     attr_names.at("current_size_in_bytes").get<std::string>()};
-
-                    instance_config instance_config{std::move(attrs), plugin_config.at("enforce").get<bool>()};
+                    instance_config instance_config{{plugin_config.at("namespace").get<std::string>(),
+                                                     attr_names.at("maximum_number_of_data_objects").get<std::string>(),
+                                                     attr_names.at("maximum_size_in_bytes").get<std::string>(),
+                                                     attr_names.at("total_number_of_data_objects").get<std::string>(),
+                                                     attr_names.at("total_size_in_bytes").get<std::string>()}};
 
                     instance_configs.insert_or_assign(_instance_name, instance_config);
 
@@ -1160,8 +1241,8 @@ namespace
 #if 0
             {peps[0], handler::logical_quotas_set_maximum_number_of_data_objects},
             {peps[1], handler::logical_quotas_set_maximum_size_in_bytes},
-            {peps[2], handler::logical_quotas_track_collection},
-            {peps[3], handler::logical_quotas_stop_tracking_collection},
+            {peps[2], handler::logical_quotas_start_monitoring_collection},
+            {peps[3], handler::logical_quotas_stop_monitoring_collection},
             {peps[4], handler::pep_api_data_obj_copy_post},
             {peps[5], handler::pep_api_data_obj_copy_pre},
             {peps[6], handler::pep_api_data_obj_open_and_stat_post},
@@ -1182,8 +1263,8 @@ namespace
 #else
             {peps[next_int()], handler::logical_quotas_set_maximum_number_of_data_objects},
             {peps[next_int()], handler::logical_quotas_set_maximum_size_in_bytes},
-            {peps[next_int()], handler::logical_quotas_stop_tracking_collection},
-            {peps[next_int()], handler::logical_quotas_track_collection},
+            {peps[next_int()], handler::logical_quotas_stop_monitoring_collection},
+            {peps[next_int()], handler::logical_quotas_start_monitoring_collection},
             {peps[next_int()], handler::pep_api_data_obj_copy_post},
             {peps[next_int()], handler::pep_api_data_obj_copy_pre},
             {peps[next_int()], handler::pep_api_data_obj_open::post},
@@ -1233,44 +1314,52 @@ namespace
             log::rule_engine::debug({{"function", __func__}, {"json_arguments", json_args.dump()}});
 
             // This function only supports the following operations:
-            // - logical_quotas_track_collection
-            // - logical_quotas_stop_tracking_collection
-            // - logical_quotas_set_maximum_number_of_data_objects
-            // - logical_quotas_set_maximum_size_in_bytes
+            // - logical_quotas_count_total_number_of_data_objects(coll)
+            // - logical_quotas_count_total_size_in_bytes(coll)
+            // - logical_quotas_recalculate_totals(coll)
+            // - logical_quotas_set_maximum_number_of_data_objects(coll, max)
+            // - logical_quotas_set_maximum_size_in_bytes(coll, max)
+            // - logical_quotas_start_monitoring_collection(coll)
+            // - logical_quotas_stop_monitoring_collection(coll)
+            // - logical_quotas_unset_maximum_number_of_data_objects(coll)
+            // - logical_quotas_unset_maximum_size_in_bytes(coll)
+            // - logical_quotas_unset_total_number_of_data_objects(coll)
+            // - logical_quotas_unset_total_size_in_bytes(coll)
 
-            if (const auto op = json_args.at("operation").get<std::string>(); op == "logical_quotas_track_collection") {
-                std::list<boost::any> args{
-                    json_args.at("collection").get<std::string>()
-                };
+            constexpr auto next_int = [] { static int i = 0; return i++; };
 
-                return handler::logical_quotas_track_collection(_instance_name, args, _effect_handler);
-            }
-            else if (op == "logical_quotas_stop_tracking_collection") {
-                std::list<boost::any> args{
-                    json_args.at("collection").get<std::string>(),
-                };
+            using handler_t = std::function<irods::error(const std::string&, std::list<boost::any>&, irods::callback&)>;
 
-                return handler::logical_quotas_stop_tracking_collection(_instance_name, args, _effect_handler);
-            }
-            else if (op == "logical_quotas_set_maximum_number_of_data_objects") {
-                std::list<boost::any> args{
-                    json_args.at("collection").get<std::string>(),
-                    json_args.at("maximum_number_of_data_objects").get<std::int64_t>()
-                };
+            static const std::map<std::string_view, handler_t> handlers{
+                {peps[next_int()], handler::logical_quotas_count_total_number_of_data_objects},
+                {peps[next_int()], handler::logical_quotas_count_total_size_in_bytes},
+                {peps[next_int()], handler::logical_quotas_recalculate_totals},
+                {peps[next_int()], handler::logical_quotas_set_maximum_number_of_data_objects},
+                {peps[next_int()], handler::logical_quotas_set_maximum_size_in_bytes},
+                {peps[next_int()], handler::logical_quotas_start_monitoring_collection},
+                {peps[next_int()], handler::logical_quotas_stop_monitoring_collection},
+                {peps[next_int()], handler::logical_quotas_unset_maximum_number_of_data_objects},
+                {peps[next_int()], handler::logical_quotas_unset_maximum_size_in_bytes},
+                {peps[next_int()], handler::logical_quotas_unset_total_number_of_data_objects},
+                {peps[next_int()], handler::logical_quotas_unset_total_size_in_bytes}
+            };
 
-                return handler::logical_quotas_set_maximum_number_of_data_objects(_instance_name, args, _effect_handler);
-            }
-            else if (op == "logical_quotas_set_maximum_size_in_bytes") {
-                std::list<boost::any> args{
-                    json_args.at("collection").get<std::string>(),
-                    json_args.at("maximum_size_in_bytes").get<std::int64_t>()
-                };
+            const auto op = json_args.at("operation").get<std::string>();
 
-                return handler::logical_quotas_set_maximum_size_in_bytes(_instance_name, args, _effect_handler);
+            if (auto iter = handlers.find(op); std::end(handlers) != iter) {
+                std::list<boost::any> args{json_args.at("collection").get<std::string>() };
+
+                if (op == "logical_quotas_set_maximum_number_of_data_objects") {
+                    args.push_back(json_args.at("maximum_number_of_data_objects").get<std::string>());
+                }
+                else if (op == "logical_quotas_set_maximum_size_in_bytes") {
+                    args.push_back(json_args.at("maximum_size_in_bytes").get<std::string>());
+                }
+
+                return (iter->second)(_instance_name, args, _effect_handler);
             }
-            else {
-                return ERROR(INVALID_OPERATION, fmt::format("Invalid operation [{}]", op));
-            }
+
+            return ERROR(INVALID_OPERATION, fmt::format("Invalid operation [{}]", op));
         }
         catch (const json::parse_error& e) {
             // clang-format off
@@ -1308,8 +1397,6 @@ namespace
 
             return ERROR(SYS_UNKNOWN_ERROR, "Unknown error");
         }
-
-        return SUCCESS();
     }
 } // namespace (anonymous)
 
