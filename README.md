@@ -50,8 +50,8 @@ still be allowed to process the same PEPs without any issues.
             "metadata_attribute_names": {
                 "maximum_number_of_data_objects": "maximum_number_of_data_objects",
                 "maximum_size_in_bytes": "maximum_size_in_bytes",
-                "current_number_of_data_objects": "current_number_of_data_objects",
-                "current_size_in_bytes": "current_size_in_bytes"
+                "total_number_of_data_objects": "total_number_of_data_objects",
+                "total_size_in_bytes": "total_size_in_bytes"
             }
         }
     },
