@@ -1,5 +1,5 @@
-#ifndef IRODS_ATTRIBUTES_HPP
-#define IRODS_ATTRIBUTES_HPP
+#ifndef IRODS_LOGICAL_QUOTAS_ATTRIBUTES_HPP
+#define IRODS_LOGICAL_QUOTAS_ATTRIBUTES_HPP
 
 #define FMT_HEADER_ONLY
 #include "fmt/format.h"
@@ -38,4 +38,4 @@ namespace irods
     }; // class attributes
 } // namespace irods
 
-#endif // IRODS_ATTRIBUTES_HPP
+#endif // IRODS_LOGICAL_QUOTAS_ATTRIBUTES_HPP

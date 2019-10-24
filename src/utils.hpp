@@ -1,5 +1,5 @@
-#ifndef IRODS_UTILS_HPP
-#define IRODS_UTILS_HPP
+#ifndef IRODS_LOGICAL_QUOTAS_UTILS_HPP
+#define IRODS_LOGICAL_QUOTAS_UTILS_HPP
 
 #include "attributes.hpp"
 #include "switch_user_error.hpp"
@@ -63,15 +63,15 @@ namespace irods::util
         return boost::any_cast<T*>(*std::next(std::begin(_rule_arguments), _index + 2));
     }
 
-    auto get_tracked_collection_info(rsComm_t& _conn, const attributes& _attrs, const irods::experimental::filesystem::path& _p) -> quotas_info_type;
+    auto get_monitored_collection_info(rsComm_t& _conn, const attributes& _attrs, const irods::experimental::filesystem::path& _p) -> quotas_info_type;
 
     auto throw_if_maximum_number_of_data_objects_violation(const attributes& _attrs, const quotas_info_type& _tracking_info, std::int64_t _delta) -> void;
 
     auto throw_if_maximum_size_in_bytes_violation(const attributes& _attrs, const quotas_info_type& _tracking_info, std::int64_t _delta) -> void;
 
-    auto is_tracked_collection(rsComm_t& _conn, const attributes& _attrs, const irods::experimental::filesystem::path& _p) -> bool;
+    auto is_monitored_collection(rsComm_t& _conn, const attributes& _attrs, const irods::experimental::filesystem::path& _p) -> bool;
 
-    auto get_tracked_parent_collection(rsComm_t& _conn,
+    auto get_monitored_parent_collection(rsComm_t& _conn,
                                        const attributes& _attrs,
                                        irods::experimental::filesystem::path _p) -> std::optional<irods::experimental::filesystem::path>;
 
@@ -85,17 +85,17 @@ namespace irods::util
                                            std::int64_t _size_in_bytes_delta) -> void;
 
     template <typename Function>
-    auto for_each_tracked_collection(rsComm_t& _conn,
+    auto for_each_monitored_collection(rsComm_t& _conn,
                                      const attributes& _attrs,
                                      irods::experimental::filesystem::path _collection,
                                      Function _func) -> void
     {
-        for (auto tracked_collection = util::get_tracked_parent_collection(_conn, _attrs, _collection);
-             tracked_collection;
-             tracked_collection = util::get_tracked_parent_collection(_conn, _attrs, tracked_collection->parent_path()))
+        for (auto monitored_collection = util::get_monitored_parent_collection(_conn, _attrs, _collection);
+             monitored_collection;
+             monitored_collection = util::get_monitored_parent_collection(_conn, _attrs, monitored_collection->parent_path()))
         {
-            auto tracked_info = util::get_tracked_collection_info(_conn, _attrs, *tracked_collection);
-            _func(*tracked_collection, tracked_info);
+            auto monitored_info = util::get_monitored_collection_info(_conn, _attrs, *monitored_collection);
+            _func(*monitored_collection, monitored_info);
         }
     }
 
@@ -105,4 +105,4 @@ namespace irods::util
                               const irods::experimental::filesystem::metadata& _metadata) -> irods::error;
 } // namespace irods::util
 
-#endif // IRODS_UTILS_HPP
+#endif // IRODS_LOGICAL_QUOTAS_UTILS_HPP

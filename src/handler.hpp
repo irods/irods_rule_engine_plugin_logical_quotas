@@ -1,5 +1,5 @@
-#ifndef IRODS_PEP_HANDLERS
-#define IRODS_PEP_HANDLERS
+#ifndef IRODS_LOGICAL_QUOTAS_HANDLER
+#define IRODS_LOGICAL_QUOTAS_HANDLER
 
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_error.hpp>
@@ -152,4 +152,5 @@ namespace irods::handler
     }; // class pep_api_rm_coll
 } // namespace irods::handler
 
-#endif // IRODS_PEP_HANDLERS
+#endif // IRODS_LOGICAL_QUOTAS_HANDLER
+

@@ -1,39 +1,42 @@
 #include "utils.hpp"
 
+#include "logical_quotas_error.hpp"
+
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_re_structs.hpp>
 #include <irods/irods_at_scope_exit.hpp>
+#include <irods/irods_query.hpp>
 #include <irods/irods_logger.hpp>
 #include <irods/filesystem.hpp>
+#include <irods/rodsErrorTable.h>
 
 #define FMT_HEADER_ONLY
 #include <fmt/format.h>
 
-namespace irods
-{
-    class callback;
-} // namespace irods
+namespace fs = irods::experimental::filesystem;
 
 namespace irods::util
 {
-    ruleExecInfo_t& get_rei(irods::callback& _effect_handler)
+    auto get_rei(irods::callback& _effect_handler) -> ruleExecInfo_t&
     {
         ruleExecInfo_t* rei{};
 
         if (const auto result = _effect_handler("unsafe_ms_ctx", &rei); !result.ok()) {
-            THROW(result.code(), "failed to get rule execution info");
+            const auto error_code = static_cast<logical_quotas_error::error_code_type>(result.code());
+            throw logical_quotas_error{"Failed to get rule execution information", error_code};
         }
 
         return *rei;
     }
 
-    void log_exception_message(const char* _msg, irods::callback& _effect_handler)
+    auto log_exception_message(const char* _msg, irods::callback& _effect_handler) -> void
     {
+        using log = irods::experimental::log;
         log::rule_engine::error(_msg);
         addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, _msg);
     }
 
-    std::optional<std::string> get_collection_id(rsComm_t& _conn, fs::path _p)
+    auto get_collection_id(rsComm_t& _conn, fs::path _p) -> std::optional<std::string>
     {
         const auto gql = fmt::format("select COLL_ID where COLL_NAME = '{}'", _p.c_str());
 
@@ -44,7 +47,7 @@ namespace irods::util
         return std::nullopt;
     }
 
-    std::optional<std::string> get_collection_user_id(rsComm_t& _conn, const std::string& _collection_id)
+    auto get_collection_user_id(rsComm_t& _conn, const std::string& _collection_id) -> std::optional<std::string>
     {
         const auto gql = fmt::format("select COLL_ACCESS_USER_ID where COLL_ACCESS_COLL_ID = '{}' and COLL_ACCESS_NAME = 'own'", _collection_id);
 
@@ -55,9 +58,8 @@ namespace irods::util
         return std::nullopt;
     }
 
-    std::optional<std::string> get_collection_username(rsComm_t& _conn, fs::path _p)
+    auto get_collection_username(rsComm_t& _conn, fs::path _p) -> std::optional<std::string>
     {
-        // TODO Could possibly use fs::status(...) and search the permissions for an owner.
         auto coll_id = get_collection_id(_conn, _p);
 
         if (!coll_id) {
@@ -79,9 +81,9 @@ namespace irods::util
         return std::nullopt;
     }
 
-    tracking_info_type get_tracked_collection_info(rsComm_t& _conn, const attributes& _attrs, const fs::path& _p)
+    auto get_monitored_collection_info(rsComm_t& _conn, const attributes& _attrs, const fs::path& _p) -> quotas_info_type
     {
-        tracking_info_type info;
+        quotas_info_type info;
 
         const auto gql = fmt::format("select META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE where COLL_NAME = '{}'", _p.c_str());
 
@@ -89,33 +91,37 @@ namespace irods::util
             // clang-format off
             if      (_attrs.maximum_number_of_data_objects() == row[0]) { info[_attrs.maximum_number_of_data_objects()] = std::stoull(row[1]); }
             else if (_attrs.maximum_size_in_bytes() == row[0])          { info[_attrs.maximum_size_in_bytes()] = std::stoull(row[1]); }
-            else if (_attrs.total_number_of_data_objects() == row[0]) { info[_attrs.total_number_of_data_objects()] = std::stoull(row[1]); }
-            else if (_attrs.total_size_in_bytes() == row[0])          { info[_attrs.total_size_in_bytes()] = std::stoull(row[1]); }
+            else if (_attrs.total_number_of_data_objects() == row[0])   { info[_attrs.total_number_of_data_objects()] = std::stoull(row[1]); }
+            else if (_attrs.total_size_in_bytes() == row[0])            { info[_attrs.total_size_in_bytes()] = std::stoull(row[1]); }
             // clang-format on
         }
 
         return info;
     }
 
-    void throw_if_maximum_number_of_data_objects_violation(const attributes& _attrs, const tracking_info_type& _tracking_info, std::int64_t _delta)
+    auto throw_if_maximum_number_of_data_objects_violation(const attributes& _attrs, const quotas_info_type& _tracking_info, std::int64_t _delta) -> void
     {
-        if (_tracking_info.find(_attrs.maximum_number_of_data_objects()) != std::end(_tracking_info)) {
-            if (_tracking_info.at(_attrs.total_number_of_data_objects()) + _delta > _tracking_info.at(_attrs.maximum_number_of_data_objects())) {
-                throw logical_quotas_error{"Policy Violation: Adding object exceeds maximum number of objects limit"};
+        const auto& max_attr_name = _attrs.maximum_number_of_data_objects();
+
+        if (_tracking_info.find(max_attr_name) != std::end(_tracking_info)) {
+            if (_tracking_info.at(_attrs.total_number_of_data_objects()) + _delta > _tracking_info.at(max_attr_name)) {
+                throw logical_quotas_error{"Policy Violation: Adding object exceeds maximum number of objects limit", SYS_RESC_QUOTA_EXCEEDED};
             }
         }
     }
 
-    void throw_if_maximum_size_in_bytes_violation(const attributes& _attrs, const tracking_info_type& _tracking_info, std::int64_t _delta)
+    auto throw_if_maximum_size_in_bytes_violation(const attributes& _attrs, const quotas_info_type& _tracking_info, std::int64_t _delta) -> void
     {
-        if (_tracking_info.find(_attrs.maximum_size_in_bytes()) != std::end(_tracking_info)) {
-            if (_tracking_info.at(_attrs.total_size_in_bytes()) + _delta > _tracking_info.at(_attrs.maximum_size_in_bytes())) {
-                throw logical_quotas_error{"Policy Violation: Adding object exceeds maximum data size in bytes limit"};
+        const auto& max_attr_name = _attrs.maximum_size_in_bytes();
+
+        if (_tracking_info.find(max_attr_name) != std::end(_tracking_info)) {
+            if (_tracking_info.at(_attrs.total_size_in_bytes()) + _delta > _tracking_info.at(max_attr_name)) {
+                throw logical_quotas_error{"Policy Violation: Adding object exceeds maximum data size in bytes limit", SYS_RESC_QUOTA_EXCEEDED};
             }
         }
     }
 
-    bool is_tracked_collection(rsComm_t& _conn, const attributes& _attrs, const fs::path& _p)
+    auto is_monitored_collection(rsComm_t& _conn, const attributes& _attrs, const fs::path& _p) -> bool
     {
         const auto gql = fmt::format("select META_COLL_ATTR_NAME where COLL_NAME = '{}' and META_COLL_ATTR_NAME = '{}' || = '{}'",
                                      _p.c_str(),
@@ -129,10 +135,10 @@ namespace irods::util
         return false;
     }
 
-    std::optional<fs::path> get_tracked_parent_collection(rsComm_t& _conn, const attributes& _attrs, fs::path _p)
+    auto get_monitored_parent_collection(rsComm_t& _conn, const attributes& _attrs, fs::path _p) -> std::optional<fs::path>
     {
         for (; !_p.empty(); _p = _p.parent_path()) {
-            if (is_tracked_collection(_conn, _attrs, _p)) {
+            if (is_monitored_collection(_conn, _attrs, _p)) {
                 return _p;
             }
             else if ("/" == _p) {
@@ -143,7 +149,7 @@ namespace irods::util
         return std::nullopt;
     }
 
-    std::tuple<std::int64_t, std::int64_t> compute_data_object_count_and_size(rsComm_t& _conn, fs::path _p)
+    auto compute_data_object_count_and_size(rsComm_t& _conn, fs::path _p) -> std::tuple<std::int64_t, std::int64_t>
     {
         std::int64_t objects = 0;
         std::int64_t bytes = 0;
@@ -158,12 +164,12 @@ namespace irods::util
         return {objects, bytes};
     }
 
-    void update_data_object_count_and_size(rsComm_t& _conn,
+    auto update_data_object_count_and_size(rsComm_t& _conn,
                                            const attributes& _attrs,
                                            const fs::path& _collection,
-                                           const tracking_info_type& _info,
+                                           const quotas_info_type& _info,
                                            std::int64_t _data_objects_delta,
-                                           std::int64_t _size_in_bytes_delta)
+                                           std::int64_t _size_in_bytes_delta) -> void
     {
         if (0 != _data_objects_delta) {
             const auto new_object_count = std::to_string(_info.at(_attrs.total_number_of_data_objects()) + _data_objects_delta);
@@ -176,10 +182,11 @@ namespace irods::util
         }
     }
 
-    irods::error unset_metadata_impl(const std::string& _instance_name,
-                                     std::list<boost::any>& _rule_arguments,
-                                     irods::callback& _effect_handler,
-                                     const fs::metadata& _metadata)
+#if 0
+    auto unset_metadata_impl(const std::string& _instance_name,
+                             std::list<boost::any>& _rule_arguments,
+                             irods::callback& _effect_handler,
+                             const fs::metadata& _metadata) -> irods::error
     {
         try
         {
@@ -207,6 +214,6 @@ namespace irods::util
 
         return SUCCESS();
     }
+#endif
 } // namespace irods::util
 
-#endif // IRODS_UTILS_HPP
