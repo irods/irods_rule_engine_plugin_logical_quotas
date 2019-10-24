@@ -39,19 +39,23 @@ set(PLUGIN_VERSION_MINOR 0)
 set(PLUGIN_VERSION_PATCH 0)
 set(PLUGIN_VERSION "${PLUGIN_VERSION_MAJOR}.${PLUGIN_VERSION_MINOR}.${PLUGIN_VERSION_PATCH}")
 
-add_library(${PLUGIN} MODULE ${CMAKE_SOURCE_DIR}/src/libirods_rule_engine_plugin-logical_quotas.cpp)
+add_library(${PLUGIN} MODULE ${CMAKE_SOURCE_DIR}/src/main.cpp
+                             ${CMAKE_SOURCE_DIR}/src/handler.cpp)
 set_target_properties(${PLUGIN} PROPERTIES CXX_STANDARD ${IRODS_CXX_STANDARD})
 target_compile_options(${PLUGIN} PRIVATE -Wno-write-strings -nostdinc++)
 target_compile_definitions(${PLUGIN} PRIVATE ${IRODS_COMPILE_DEFINITIONS}
                                              RODS_SERVER
                                              IRODS_ENABLE_SYSLOG
                                              IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
-                                             IRODS_USE_FMTLIB)
+                                             FMT_HEADER_ONLY
+                                             SPDLOG_FMT_EXTERNAL)
 target_include_directories(${PLUGIN} PRIVATE ${CMAKE_SOURCE_DIR}/fmt/include
+                                             ${CMAKE_SOURCE_DIR}/spdlog/include
+                                             ${CMAKE_SOURCE_DIR}/spdlog/include/spdlog
                                              ${IRODS_INCLUDE_DIRS}
                                              ${IRODS_EXTERNALS_FULLPATH_CLANG}/include/c++/v1
                                              ${IRODS_EXTERNALS_FULLPATH_BOOST}/include
-                                             ${IRODS_EXTERNALS_FULLPATH_SPDLOG}/include
+                                             #${IRODS_EXTERNALS_FULLPATH_SPDLOG}/include
                                              ${IRODS_EXTERNALS_FULLPATH_JSON}/include)
 target_link_libraries(${PLUGIN} PRIVATE irods_server
                                         irods_common

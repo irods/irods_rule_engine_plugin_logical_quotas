@@ -1,59 +1,41 @@
 #include "instance_configuration.hpp"
 #include "handler.hpp"
-#include "utils.hpp"
 
-#include <irods/filesystem/filesystem.hpp>
 #include <irods/irods_plugin_context.hpp>
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_re_serialization.hpp>
 #include <irods/irods_re_ruleexistshelper.hpp>
 #include <irods/irods_get_full_path_for_config_file.hpp>
-#include <irods/irods_get_l1desc.hpp>
-#include <irods/irods_at_scope_exit.hpp>
-#include <irods/irods_query.hpp>
+//#include <irods/irods_get_l1desc.hpp>
+//#include <irods/irods_at_scope_exit.hpp>
+//#include <irods/irods_query.hpp>
 #include <irods/irods_logger.hpp>
-#include <irods/filesystem.hpp>
-#include <irods/irods_state_table.h>
-#include <irods/modAVUMetadata.h>
-#include <irods/msParam.h>
-#include <irods/objDesc.hpp>
-#include <irods/objInfo.h>
-#include <irods/dataObjInpOut.h>
-#include <irods/rcConnect.h>
-#include <irods/rcMisc.h>
+//#include <irods/irods_state_table.h>
+//#include <irods/modAVUMetadata.h>
+//#include <irods/msParam.h>
+//#include <irods/objDesc.hpp>
+//#include <irods/objInfo.h>
+//#include <irods/dataObjInpOut.h>
+//#include <irods/rcConnect.h>
+//#include <irods/rcMisc.h>
 #include <irods/rodsError.h>
 #include <irods/rodsErrorTable.h>
 
 #include <boost/any.hpp>
-#include <boost/filesystem.hpp>
 
 #include <json.hpp>
 
-#define FMT_HEADER_ONLY
+//#define FMT_HEADER_ONLY
 #include <fmt/format.h>
-
-#include <stdexcept>
-#include <string>
-#include <string_view>
-#include <array>
-#include <algorithm>
-#include <iterator>
-#include <functional>
-#include <list>
-#include <optional>
-#include <unordered_map>
-#include <tuple>
 
 namespace
 {
-    namespace fs = irods::experimental::filesystem;
-
     // clang-format off
     using log  = irods::experimental::log;
     using json = nlohmann::json;
     // clang-format on
 
-    std::unordered_map<std::string, irods::instance_configuration> instance_configs;
+    irods::instance_configuration_map instance_configs;
 
     // This is a "sorted" list of the supported PEPs.
     // This will allow us to do binary search on the list for lookups.
@@ -102,9 +84,7 @@ namespace
         if (auto error = irods::get_full_path_for_config_file("server_config.json", config_path);
             !error.ok())
         {
-            std::string msg = "Server configuration not found [path => ";
-            msg += config_path;
-            msg += ']';
+            const auto msg = fmt::format("Server configuration not found [path => {}]", config_path);
 
             // clang-format off
             log::rule_engine::error({{"rule_engine_plugin", "logical_quotas"},
@@ -182,7 +162,10 @@ namespace
     {
         namespace handler = irods::handler;
 
-        using handler_type = std::function<irods::error(const std::string&, std::list<boost::any>&, irods::callback&)>;
+        using handler_type = std::function<irods::error(const std::string&,
+                                                        const irods::instance_configuration_map&,
+                                                        std::list<boost::any>&,
+                                                        irods::callback&)>;
 
         constexpr auto next_int = [] { static int i = 0; return i++; };
 
@@ -218,11 +201,10 @@ namespace
         };
 
         if (auto iter = handlers.find(_rule_name); std::end(handlers) != iter) {
-            return (iter->second)(_instance_name, _rule_arguments, _effect_handler);
+            return (iter->second)(_instance_name, instance_configs, _rule_arguments, _effect_handler);
         }
 
-        log::rule_engine::error({{"log_message", "[irods_rule_engine_plugin-logical_quotas] rule not supported in rule engine plugin"},
-                                 {"rule", _rule_name}});
+        log::rule_engine::error(fmt::format("Rule not supported in rule engine plugin [rule => {}]", _rule_name));
 
         return CODE(RULE_ENGINE_CONTINUE);
     }
@@ -233,8 +215,16 @@ namespace
     {
         log::rule_engine::debug({{"_rule_text", std::string{_rule_text}}});
 
+        // irule <text>
         if (const auto pos = _rule_text.find("@external rule {"); pos != std::string::npos) {
             const auto start = _rule_text.find_first_of('{') + 1;
+            _rule_text = _rule_text.substr(start, _rule_text.rfind(" }") - start);
+
+            log::rule_engine::debug({{"_rule_text", std::string{_rule_text}}});
+        }
+        // irule -F <script>
+        else if (const auto pos = _rule_text.find("@external"); pos != std::string::npos) {
+            const auto start = _rule_text.find_first_of('{');
             _rule_text = _rule_text.substr(start, _rule_text.rfind(" }") - start);
 
             log::rule_engine::debug({{"_rule_text", std::string{_rule_text}}});
@@ -247,7 +237,10 @@ namespace
 
             namespace handler = irods::handler;
 
-            using handler_type = std::function<irods::error(const std::string&, std::list<boost::any>&, irods::callback&)>;
+            using handler_type = std::function<irods::error(const std::string&,
+                                                            const irods::instance_configuration_map&,
+                                                            std::list<boost::any>&,
+                                                            irods::callback&)>;
 
             constexpr auto next_int = [] { static int i = 0; return i++; };
 
@@ -277,7 +270,7 @@ namespace
                     args.push_back(json_args.at("maximum_size_in_bytes").get<std::string>());
                 }
 
-                return (iter->second)(_instance_name, args, _effect_handler);
+                return (iter->second)(_instance_name, instance_configs, args, _effect_handler);
             }
 
             return ERROR(INVALID_OPERATION, fmt::format("Invalid operation [{}]", op));
