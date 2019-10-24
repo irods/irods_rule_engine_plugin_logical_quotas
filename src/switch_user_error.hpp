@@ -1,5 +1,5 @@
-#ifndef IRODS_SWITCH_USER_ERROR_HPP
-#define IRODS_SWITCH_USER_ERROR_HPP
+#ifndef IRODS_LOGICAL_QUOTAS_SWITCH_USER_ERROR_HPP
+#define IRODS_LOGICAL_QUOTAS_SWITCH_USER_ERROR_HPP
 
 #include "logical_quotas_error.hpp"
 
@@ -13,4 +13,4 @@ namespace irods
     };
 } // namespace irods
 
-#endif // IRODS_SWITCH_USER_ERROR_HPP
+#endif // IRODS_LOGICAL_QUOTAS_SWITCH_USER_ERROR_HPP
