@@ -6,27 +6,13 @@
 #include <irods/irods_re_serialization.hpp>
 #include <irods/irods_re_ruleexistshelper.hpp>
 #include <irods/irods_get_full_path_for_config_file.hpp>
-//#include <irods/irods_get_l1desc.hpp>
-//#include <irods/irods_at_scope_exit.hpp>
-//#include <irods/irods_query.hpp>
 #include <irods/irods_logger.hpp>
-//#include <irods/irods_state_table.h>
-//#include <irods/modAVUMetadata.h>
-//#include <irods/msParam.h>
-//#include <irods/objDesc.hpp>
-//#include <irods/objInfo.h>
-//#include <irods/dataObjInpOut.h>
-//#include <irods/rcConnect.h>
-//#include <irods/rcMisc.h>
 #include <irods/rodsError.h>
 #include <irods/rodsErrorTable.h>
 
-#include <boost/any.hpp>
-
 #include <json.hpp>
-
-//#define FMT_HEADER_ONLY
 #include <fmt/format.h>
+#include <boost/any.hpp>
 
 namespace
 {
@@ -37,7 +23,7 @@ namespace
 
     irods::instance_configuration_map instance_configs;
 
-    // This is a "sorted" list of the supported PEPs.
+    // This is a "sorted" list of all operations supported by this REP.
     // This will allow us to do binary search on the list for lookups.
     constexpr std::array<std::string_view, 28> peps{
         "logical_quotas_count_total_number_of_data_objects",
@@ -263,11 +249,10 @@ namespace
             if (auto iter = handlers.find(op); std::end(handlers) != iter) {
                 std::list<boost::any> args{json_args.at("collection").get<std::string>() };
 
-                if (op == "logical_quotas_set_maximum_number_of_data_objects") {
-                    args.push_back(json_args.at("maximum_number_of_data_objects").get<std::string>());
-                }
-                else if (op == "logical_quotas_set_maximum_size_in_bytes") {
-                    args.push_back(json_args.at("maximum_size_in_bytes").get<std::string>());
+                if (op == "logical_quotas_set_maximum_number_of_data_objects" ||
+                    op == "logical_quotas_set_maximum_size_in_bytes")
+                {
+                    args.push_back(json_args.at("value").get<handler::size_type>());
                 }
 
                 return (iter->second)(_instance_name, instance_configs, args, _effect_handler);

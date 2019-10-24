@@ -157,10 +157,10 @@ namespace
 
         for (auto&& row : irods::query{&_conn, gql}) {
             // clang-format off
-            if      (_attrs.maximum_number_of_data_objects() == row[0]) { info[_attrs.maximum_number_of_data_objects()] = std::stoull(row[1]); }
-            else if (_attrs.maximum_size_in_bytes() == row[0])          { info[_attrs.maximum_size_in_bytes()] = std::stoull(row[1]); }
-            else if (_attrs.total_number_of_data_objects() == row[0])   { info[_attrs.total_number_of_data_objects()] = std::stoull(row[1]); }
-            else if (_attrs.total_size_in_bytes() == row[0])            { info[_attrs.total_size_in_bytes()] = std::stoull(row[1]); }
+            if      (_attrs.maximum_number_of_data_objects() == row[0]) { info[_attrs.maximum_number_of_data_objects()] = std::stoll(row[1]); }
+            else if (_attrs.maximum_size_in_bytes() == row[0])          { info[_attrs.maximum_size_in_bytes()] = std::stoll(row[1]); }
+            else if (_attrs.total_number_of_data_objects() == row[0])   { info[_attrs.total_number_of_data_objects()] = std::stoll(row[1]); }
+            else if (_attrs.total_size_in_bytes() == row[0])            { info[_attrs.total_size_in_bytes()] = std::stoll(row[1]); }
             // clang-format on
         }
 
@@ -229,8 +229,8 @@ namespace
         const auto gql = fmt::format("select count(DATA_NAME), sum(DATA_SIZE) where COLL_NAME = '{0}' || like '{0}/%'", _p.c_str());
 
         for (auto&& row : irods::query{&_conn, gql}) {
-            objects = std::stoull(row[0]);
-            bytes = std::stoull(row[1]);
+            objects = !row[0].empty() ? std::stoll(row[0]) : 0;
+            bytes = !row[1].empty() ? std::stoll(row[1]) : 0;
         }
 
         return {objects, bytes};
@@ -340,12 +340,12 @@ namespace
                                        fs::path _collection,
                                        Function _func) -> void
     {
-        for (auto monitored_collection = get_monitored_parent_collection(_conn, _attrs, _collection);
-             monitored_collection;
-             monitored_collection = get_monitored_parent_collection(_conn, _attrs, monitored_collection->parent_path()))
+        for (auto collection = get_monitored_parent_collection(_conn, _attrs, _collection);
+             collection;
+             collection = get_monitored_parent_collection(_conn, _attrs, collection->parent_path()))
         {
-            auto monitored_info = get_monitored_collection_info(_conn, _attrs, *monitored_collection);
-            _func(*monitored_collection, monitored_info);
+            auto info = get_monitored_collection_info(_conn, _attrs, *collection);
+            _func(*collection, info);
         }
     }
 } // anonymous namespace
@@ -430,7 +430,7 @@ namespace irods::handler
                 std::string bytes;
 
                 for (auto&& row : irods::query{rei.rsComm, gql}) {
-                    bytes = row[1];
+                    bytes = row[0];
                 }
 
                 const auto& attrs = _instance_configs.at(_instance_name).attributes();
@@ -464,7 +464,7 @@ namespace irods::handler
     }
 
     auto logical_quotas_set_maximum_number_of_data_objects(const std::string& _instance_name,
-                                                    const instance_configuration_map& _instance_configs,
+                                                           const instance_configuration_map& _instance_configs,
                                                            std::list<boost::any>& _rule_arguments,
                                                            irods::callback& _effect_handler) -> irods::error
     {
@@ -496,7 +496,7 @@ namespace irods::handler
     }
 
     auto logical_quotas_set_maximum_size_in_bytes(const std::string& _instance_name,
-                                                    const instance_configuration_map& _instance_configs,
+                                                  const instance_configuration_map& _instance_configs,
                                                   std::list<boost::any>& _rule_arguments,
                                                   irods::callback& _effect_handler) -> irods::error
     {
@@ -715,7 +715,8 @@ namespace irods::handler
 
             if (fs::server::exists(*rei.rsComm, input->objPath)) {
                 forced_overwrite_ = true;
-                size_diff_ = fs::server::data_object_size(conn, input->objPath) - input->dataSize;
+                const size_type existing_size = fs::server::data_object_size(conn, input->objPath);
+                size_diff_ = static_cast<size_type>(input->dataSize) - existing_size;
 
                 for_each_monitored_collection(conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, auto& _info) {
                     throw_if_maximum_size_in_bytes_violation(attrs, _info, size_diff_);
@@ -898,7 +899,7 @@ namespace irods::handler
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
 
-            if (auto monitored_collection = get_monitored_parent_collection(conn, attrs, input->objPath); monitored_collection) {
+            if (auto collection = get_monitored_parent_collection(conn, attrs, input->objPath); collection) {
                 size_in_bytes_ = fs::server::data_object_size(conn, input->objPath);
             }
         }
@@ -950,6 +951,8 @@ namespace irods::handler
             const auto& attrs = instance_config.attributes();
             const auto* path = irods::get_l1desc(input->l1descInx).dataObjInfo->objPath;
 
+            log::rule_engine::debug(fmt::format("DATA OBJ WRITE PRE - BYTES WRITTEN => {}", input->bytesWritten));
+
             for_each_monitored_collection(conn, attrs, path, [&conn, &attrs, input](const auto&, const auto& _info) {
                 throw_if_maximum_size_in_bytes_violation(attrs, _info, input->bytesWritten);
             });
@@ -975,6 +978,8 @@ namespace irods::handler
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
             const auto* path = irods::get_l1desc(input->l1descInx).dataObjInfo->objPath;
+
+            log::rule_engine::debug(fmt::format("DATA OBJ WRITE POST - BYTES WRITTEN => {}", input->bytesWritten));
 
             for_each_monitored_collection(conn, attrs, path, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
                 update_data_object_count_and_size(conn, attrs, _collection, _info, 0, input->bytesWritten);
@@ -1043,7 +1048,7 @@ namespace irods::handler
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
 
-            if (auto monitored_collection = get_monitored_parent_collection(conn, attrs, input->collName); monitored_collection) {
+            if (auto collection = get_monitored_parent_collection(conn, attrs, input->collName); collection) {
                 std::tie(data_objects_, size_in_bytes_) = compute_data_object_count_and_size(conn, input->collName);
             }
         }

@@ -9,6 +9,7 @@
 ## Compiling
 ```bash
 $ git clone https://github.com/irods/irods_rule_engine_plugin_logical_quotas
+$ git submodule update --init
 $ mkdir _build
 $ cd _build
 $ cmake -GNinja ../irods_rule_engine_plugin_logical_quotas
@@ -59,3 +60,6 @@ still be allowed to process the same PEPs without any issues.
     // ... Previously installed rule engine plugin configs ...
 ]
 ```
+
+## How To Use
+Navigate to the **scripts** directory and use `lq_cmd.sh <rule_file.r>` to execute operations.
