@@ -1,6 +1,5 @@
 #include "handler.hpp"
 
-#include "instance_configuration.hpp"
 #include "logical_quotas_error.hpp"
 #include "switch_user_error.hpp"
 
