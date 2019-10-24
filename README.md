@@ -9,9 +9,9 @@
 ## Compiling
 ```bash
 $ git clone https://github.com/irods/irods_rule_engine_plugin_logical_quotas
+$ cd irods_rule_engine_plugin_logical_quotas
 $ git submodule update --init
-$ mkdir _build
-$ cd _build
+$ mkdir _build && cd _build
 $ cmake -GNinja ../irods_rule_engine_plugin_logical_quotas
 $ ninja package
 ```
