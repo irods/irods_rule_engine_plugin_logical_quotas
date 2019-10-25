@@ -185,19 +185,17 @@ namespace
         log::rule_engine::debug({{"_rule_text", std::string{_rule_text}}});
 
         // irule <text>
-        if (const auto pos = _rule_text.find("@external rule {"); pos != std::string::npos) {
+        if (_rule_text.find("@external rule {") != std::string::npos) {
             const auto start = _rule_text.find_first_of('{') + 1;
             _rule_text = _rule_text.substr(start, _rule_text.rfind(" }") - start);
-
-            log::rule_engine::debug({{"_rule_text", std::string{_rule_text}}});
         }
         // irule -F <script>
-        else if (const auto pos = _rule_text.find("@external"); pos != std::string::npos) {
+        else if (_rule_text.find("@external") != std::string::npos) {
             const auto start = _rule_text.find_first_of('{');
             _rule_text = _rule_text.substr(start, _rule_text.rfind(" }") - start);
-
-            log::rule_engine::debug({{"_rule_text", std::string{_rule_text}}});
         }
+
+        log::rule_engine::debug({{"_rule_text", std::string{_rule_text}}});
 
         try {
             const auto json_args = json::parse(_rule_text);

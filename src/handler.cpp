@@ -15,6 +15,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <tuple>
+#include <functional>
 
 namespace
 {
