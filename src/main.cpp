@@ -5,12 +5,12 @@
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_re_serialization.hpp>
 #include <irods/irods_re_ruleexistshelper.hpp>
+#include <irods/irods_server_properties.hpp>
 #include <irods/irods_get_full_path_for_config_file.hpp>
-#include <irods/irods_logger.hpp>
 #include <irods/rodsError.h>
 #include <irods/rodsErrorTable.h>
+#include <irods/rodsLog.h>
 
-#include <json.hpp>
 #include <fmt/format.h>
 #include <boost/any.hpp>
 
@@ -20,12 +20,7 @@
 
 namespace
 {
-    // clang-format off
     namespace handler = irods::handler;
-
-    using log         = irods::experimental::log;
-    using json        = nlohmann::json;
-    // clang-format on
 
     irods::instance_configuration_map instance_configs;
 
@@ -34,7 +29,7 @@ namespace
                                                     std::list<boost::any>&,
                                                     irods::callback&)>;
 
-    using handler_map_type = std::map<std::string_view, handler_type>;
+    using handler_map_type = std::map<std::string, handler_type>;
 
     const handler_map_type logical_quotas_handlers{
         {"logical_quotas_count_total_number_of_data_objects",   handler::logical_quotas_count_total_number_of_data_objects},
@@ -79,35 +74,6 @@ namespace
 
     auto start(irods::default_re_ctx&, const std::string& _instance_name) -> irods::error
     {
-        std::string config_path;
-
-        if (auto error = irods::get_full_path_for_config_file("server_config.json", config_path);
-            !error.ok())
-        {
-            const char* msg = "Server configuration not found";
-
-            // clang-format off
-            log::rule_engine::error({{"rule_engine_plugin", "logical_quotas"},
-                                     {"rule_engine_plugin_function", __func__},
-                                     {"log_message", msg}});
-            // clang-format on
-
-            return ERROR(SYS_CONFIG_FILE_ERR, msg);
-        }
-
-        // clang-format off
-        log::rule_engine::trace({{"rule_engine_plugin", "logical_quotas"},
-                                 {"rule_engine_plugin_function", __func__},
-                                 {"log_message", "Reading plugin configuration ..."}});
-        // clang-format on
-
-        json config;
-
-        {
-            std::ifstream config_file{config_path};
-            config_file >> config;
-        }
-
         try {
             for (const auto& re : config.at(irods::CFG_PLUGIN_CONFIGURATION_KW).at(irods::PLUGIN_TYPE_RULE_ENGINE)) {
                 if (_instance_name == re.at(irods::CFG_INSTANCE_NAME_KW).get<std::string>()) {
@@ -120,19 +86,14 @@ namespace
                                                                    attr_names.at("total_number_of_data_objects").get<std::string>(),
                                                                    attr_names.at("total_size_in_bytes").get<std::string>()}};
 
-                    instance_configs.insert_or_assign(_instance_name, instance_config);
+                    instance_configs.insert({_instance_name, instance_config});
 
                     return SUCCESS();
                 }
             }
         }
         catch (const std::exception& e) {
-            // clang-format off
-            log::rule_engine::error({{"rule_engine_plugin", "logical_quotas"},
-                                     {"rule_engine_plugin_function", __func__},
-                                     {"log_message", e.what()}});
-            // clang-format on
-
+            rodsLog(LOG_ERROR, e.what());
             return ERROR(SYS_CONFIG_FILE_ERR, e.what());
         }
 
@@ -169,35 +130,35 @@ namespace
                    std::list<boost::any>& _rule_arguments,
                    irods::callback _effect_handler) -> irods::error
     {
-        if (const auto iter = pep_handlers.find(_rule_name); iter != std::end(pep_handlers)) {
+        const auto iter = pep_handlers.find(_rule_name);
+        
+        if (iter != std::end(pep_handlers)) {
             return (iter->second)(_instance_name, instance_configs, _rule_arguments, _effect_handler);
         }
 
-        log::rule_engine::error(fmt::format("Rule not supported in rule engine plugin [rule => {}]", _rule_name));
+        rodsLog(LOG_ERROR, "Rule not supported in rule engine plugin [rule => %s]", _rule_name.c_str());
 
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
     auto exec_rule_text_impl(const std::string& _instance_name,
-                             std::string_view _rule_text,
+                             std::string _rule_text,
                              irods::callback _effect_handler) -> irods::error
     {
-        log::rule_engine::debug({{"_rule_text", std::string{_rule_text}}});
+        rodsLog(LOG_DEBUG, "_rule_text (before) = %s", _rule_text.c_str());
 
         // irule <text>
-        if (const auto pos = _rule_text.find("@external rule {"); pos != std::string::npos) {
+        if (_rule_text.find("@external rule {") != std::string::npos) {
             const auto start = _rule_text.find_first_of('{') + 1;
             _rule_text = _rule_text.substr(start, _rule_text.rfind(" }") - start);
-
-            log::rule_engine::debug({{"_rule_text", std::string{_rule_text}}});
         }
         // irule -F <script>
-        else if (const auto pos = _rule_text.find("@external"); pos != std::string::npos) {
+        else if (_rule_text.find("@external") != std::string::npos) {
             const auto start = _rule_text.find_first_of('{');
             _rule_text = _rule_text.substr(start, _rule_text.rfind(" }") - start);
-
-            log::rule_engine::debug({{"_rule_text", std::string{_rule_text}}});
         }
+
+        rodsLog(LOG_DEBUG, "_rule_text (after) = %s", _rule_text.c_str());
 
         try {
             const auto json_args = json::parse(_rule_text);
@@ -205,8 +166,9 @@ namespace
             log::rule_engine::debug({{"function", __func__}, {"json_arguments", json_args.dump()}});
 
             const auto op = json_args.at("operation").get<std::string>();
-
-            if (const auto iter = logical_quotas_handlers.find(op); iter != std::end(logical_quotas_handlers)) {
+            const auto iter = logical_quotas_handlers.find(op);
+            
+            if (iter != std::end(logical_quotas_handlers)) {
                 std::list<boost::any> args{json_args.at("collection").get<std::string>() };
 
                 if (op == "logical_quotas_set_maximum_number_of_data_objects" ||

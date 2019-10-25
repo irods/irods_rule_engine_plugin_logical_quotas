@@ -11,8 +11,9 @@
 #include <string>
 #include <list>
 
-namespace irods::handler
-{
+namespace irods {
+namespace handler {
+
     using size_type = std::int64_t;
 
     auto logical_quotas_start_monitoring_collection(const std::string& _instance_name,
@@ -94,7 +95,7 @@ namespace irods::handler
                          irods::callback& _effect_handler) -> irods::error;
 
     private:
-        inline static bool increment_object_count_ = false;
+        static bool increment_object_count_;
     }; // class pep_api_data_obj_open
 
     class pep_api_data_obj_put final
@@ -111,8 +112,8 @@ namespace irods::handler
                          irods::callback& _effect_handler) -> irods::error;
 
     private:
-        inline static size_type size_diff_ = 0;
-        inline static bool forced_overwrite_ = false;
+        static size_type size_diff_;
+        static bool forced_overwrite_;
     }; // class pep_api_data_obj_put
 
     auto pep_api_data_obj_rename_pre(const std::string& _instance_name,
@@ -139,7 +140,7 @@ namespace irods::handler
                          irods::callback& _effect_handler) -> irods::error;
 
     private:
-        inline static size_type size_in_bytes_ = 0;
+        static size_type size_in_bytes_;
     }; // class pep_api_data_obj_unlink
 
     class pep_api_data_obj_write final
@@ -177,10 +178,12 @@ namespace irods::handler
                          irods::callback& _effect_handler) -> irods::error;
 
     private:
-        inline static size_type data_objects_ = 0;
-        inline static size_type size_in_bytes_ = 0;
+        static size_type data_objects_;
+        static size_type size_in_bytes_;
     }; // class pep_api_rm_coll
-} // namespace irods::handler
+
+} // namespace handler
+} // namespace irods
 
 #endif // IRODS_LOGICAL_QUOTAS_HANDLER
 
