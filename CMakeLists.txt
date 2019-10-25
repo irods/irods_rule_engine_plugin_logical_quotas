@@ -55,9 +55,7 @@ target_include_directories(${PLUGIN} PRIVATE ${CMAKE_SOURCE_DIR}/fmt/include
                                              ${CMAKE_SOURCE_DIR}/spdlog/include/spdlog
                                              ${IRODS_INCLUDE_DIRS}
                                              ${IRODS_EXTERNALS_FULLPATH_CLANG}/include/c++/v1
-                                             ${IRODS_EXTERNALS_FULLPATH_BOOST}/include
-                                             #${IRODS_EXTERNALS_FULLPATH_SPDLOG}/include
-                                             ${IRODS_EXTERNALS_FULLPATH_JSON}/include)
+                                             ${IRODS_EXTERNALS_FULLPATH_BOOST}/include)
 target_link_libraries(${PLUGIN} PRIVATE irods_server
                                         irods_common
                                         ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_filesystem.so
