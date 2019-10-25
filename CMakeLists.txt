@@ -45,7 +45,6 @@ set_target_properties(${PLUGIN} PROPERTIES CXX_STANDARD ${IRODS_CXX_STANDARD})
 target_compile_options(${PLUGIN} PRIVATE -Wno-write-strings -nostdinc++)
 target_compile_definitions(${PLUGIN} PRIVATE ${IRODS_COMPILE_DEFINITIONS}
                                              RODS_SERVER
-                                             IRODS_ENABLE_SYSLOG
                                              IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
                                              FMT_HEADER_ONLY
                                              SPDLOG_FMT_EXTERNAL)
