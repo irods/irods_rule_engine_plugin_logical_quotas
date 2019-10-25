@@ -948,9 +948,10 @@ namespace irods::handler
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = instance_config.attributes();
-            const auto* path = irods::get_l1desc(input->l1descInx).dataObjInfo->objPath;
+            const auto& l1desc = irods::get_l1desc(input->l1descInx);
+            const auto* path = l1desc.dataObjInfo->objPath;
 
-            log::rule_engine::debug(fmt::format("DATA OBJ WRITE PRE - BYTES WRITTEN => {}", input->bytesWritten));
+            log::rule_engine::debug(fmt::format("DATA OBJ WRITE PRE - BYTES WRITTEN => {}", l1desc.bytesWritten));
 
             for_each_monitored_collection(conn, attrs, path, [&conn, &attrs, input](const auto&, const auto& _info) {
                 throw_if_maximum_size_in_bytes_violation(attrs, _info, input->bytesWritten);
