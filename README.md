@@ -1,16 +1,16 @@
 # iRODS Rule Engine Plugin - Logical Quotas
 
 ## Requirements
-- iRODS v4.3.0+
+- iRODS v4.2.6+
 - irods-dev package
 - irods-runtime package
 - irods-externals-boost package
-- irods-externals-json package
 
 ## Compiling
 ```bash
 $ git clone https://github.com/irods/irods_rule_engine_plugin_logical_quotas
 $ cd irods_rule_engine_plugin_logical_quotas
+$ git checkout 4-2-stable
 $ git submodule update --init
 $ mkdir _build && cd _build
 $ cmake -GNinja ../irods_rule_engine_plugin_logical_quotas
