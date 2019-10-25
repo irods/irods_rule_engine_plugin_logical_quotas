@@ -1,10 +1,11 @@
 # iRODS Rule Engine Plugin - Logical Quotas
 
 ## Requirements
-- iRODS v4.2.6+
-- irods-externals-boost package
+- iRODS v4.3.0+
 - irods-dev package
 - irods-runtime package
+- irods-externals-boost package
+- irods-externals-json package
 
 ## Compiling
 ```bash
@@ -62,12 +63,21 @@ still be allowed to process the same PEPs without any issues.
 ```
 
 ## How To Use
-A convenience script has been provided in the **<repo>/scripts** directory.
+Convenience scripts are available under the `<repo>/scripts` directory.
 
-To use it, you will first need to edit the **<rule_file.r>** files. Within these files, you'll need to set the
-collection and any other properties that are important to your deployment.
+To use it, you will first need to edit the `<rule_file.r>` files. Within these files, you'll need to set the
+collection along with any other properties that are important to your deployment. You should only need to modify
+the `collection` property (and `value` property if listed) within the rule files.
 
-Navigate to the **scripts** directory and use `./lq_cmd.sh <rule_file.r>` to execute operations.
+Once you've updated the rule files, navigate to the **scripts** directory and run `./lq_cmd.sh <rule_file.r>` to
+execute the operation.
+
+For example, to start monitoring a collection, you'd do the following:
+```bash
+$ vim start_monitoring.r             # Set the collection.
+$ ./lq_cmd.sh start_monitoring.r     # Execute the rule file.
+$ imeta ls -C <path/to/collection>   # Verify that the metadata is set.
+```
 
 The following operations are available:
 - start_monitoring
