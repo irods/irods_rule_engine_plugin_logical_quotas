@@ -5,7 +5,6 @@
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_re_serialization.hpp>
 #include <irods/irods_re_ruleexistshelper.hpp>
-#include <irods/irods_server_properties.hpp>
 #include <irods/irods_get_full_path_for_config_file.hpp>
 #include <irods/rodsError.h>
 #include <irods/rodsErrorTable.h>
@@ -25,7 +24,6 @@ namespace
     namespace handler = irods::handler;
 
     using json        = nlohmann::json;
-    // clang-format on
 
     irods::instance_configuration_map instance_configs;
 
@@ -69,6 +67,7 @@ namespace
         {"pep_api_rm_coll_post",                handler::pep_api_rm_coll::post},
         {"pep_api_rm_coll_pre",                 handler::pep_api_rm_coll::pre}
     };
+    // clang-format on
 
     //
     // Rule Engine Plugin

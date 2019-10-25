@@ -8,7 +8,6 @@
 #include <irods/irods_at_scope_exit.hpp>
 #include <irods/irods_get_l1desc.hpp>
 #include <irods/modAVUMetadata.h>
-#include <irods/rcConnect.h>
 #include <irods/rodsLog.h>
 
 #include <fmt/format.h>
