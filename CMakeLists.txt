@@ -50,6 +50,7 @@ target_compile_definitions(${PLUGIN} PRIVATE ${IRODS_COMPILE_DEFINITIONS}
                                              FMT_HEADER_ONLY
                                              SPDLOG_FMT_EXTERNAL)
 target_include_directories(${PLUGIN} PRIVATE ${CMAKE_SOURCE_DIR}/fmt/include
+                                             ${CMAKE_SOURCE_DIR}/json/single_include/nlohmann
                                              ${CMAKE_SOURCE_DIR}/spdlog/include
                                              ${CMAKE_SOURCE_DIR}/spdlog/include/spdlog
                                              ${IRODS_INCLUDE_DIRS}

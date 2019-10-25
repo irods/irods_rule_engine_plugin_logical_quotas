@@ -11,6 +11,7 @@
 #include <irods/rodsErrorTable.h>
 #include <irods/rodsLog.h>
 
+#include <json.hpp>
 #include <fmt/format.h>
 #include <boost/any.hpp>
 
@@ -20,7 +21,11 @@
 
 namespace
 {
+    // clang-format off
     namespace handler = irods::handler;
+
+    using json        = nlohmann::json;
+    // clang-format on
 
     irods::instance_configuration_map instance_configs;
 
@@ -74,6 +79,25 @@ namespace
 
     auto start(irods::default_re_ctx&, const std::string& _instance_name) -> irods::error
     {
+        std::string config_path;
+
+        auto error = irods::get_full_path_for_config_file("server_config.json", config_path);
+
+        if (!error.ok()) {
+            const char* msg = "Server configuration not found";
+            rodsLog(LOG_ERROR, msg);
+            return ERROR(SYS_CONFIG_FILE_ERR, msg);
+        }
+
+        rodsLog(LOG_DEBUG, "Reading plugin configuration ...");
+
+        json config;
+
+        {
+            std::ifstream config_file{config_path};
+            config_file >> config;
+        }
+
         try {
             for (const auto& re : config.at(irods::CFG_PLUGIN_CONFIGURATION_KW).at(irods::PLUGIN_TYPE_RULE_ENGINE)) {
                 if (_instance_name == re.at(irods::CFG_INSTANCE_NAME_KW).get<std::string>()) {
@@ -163,7 +187,7 @@ namespace
         try {
             const auto json_args = json::parse(_rule_text);
 
-            log::rule_engine::debug({{"function", __func__}, {"json_arguments", json_args.dump()}});
+            rodsLog(LOG_DEBUG, "json_arguments => %s", json_args.dump().c_str());
 
             const auto op = json_args.at("operation").get<std::string>();
             const auto iter = logical_quotas_handlers.find(op);
@@ -183,39 +207,19 @@ namespace
             return ERROR(INVALID_OPERATION, fmt::format("Invalid operation [{}]", op));
         }
         catch (const json::parse_error& e) {
-            // clang-format off
-            log::rule_engine::error({{"rule_engine_plugin", "logical_quotas"},
-                                     {"rule_engine_plugin_function", __func__},
-                                     {"log_message", e.what()}});
-            // clang-format on
-
+            rodsLog(LOG_ERROR, e.what());
             return ERROR(USER_INPUT_FORMAT_ERR, e.what());
         }
         catch (const json::type_error& e) {
-            // clang-format off
-            log::rule_engine::error({{"rule_engine_plugin", "logical_quotas"},
-                                     {"rule_engine_plugin_function", __func__},
-                                     {"log_message", e.what()}});
-            // clang-format on
-
+            rodsLog(LOG_ERROR, e.what());
             return ERROR(SYS_INTERNAL_ERR, e.what());
         }
         catch (const std::exception& e) {
-            // clang-format off
-            log::rule_engine::error({{"rule_engine_plugin", "logical_quotas"},
-                                     {"rule_engine_plugin_function", __func__},
-                                     {"log_message", e.what()}});
-            // clang-format on
-
+            rodsLog(LOG_ERROR, e.what());
             return ERROR(SYS_INTERNAL_ERR, e.what());
         }
         catch (...) {
-            // clang-format off
-            log::rule_engine::error({{"rule_engine_plugin", "logical_quotas"},
-                                     {"rule_engine_plugin_function", __func__},
-                                     {"log_message", "Unknown error"}});
-            // clang-format on
-
+            rodsLog(LOG_ERROR, "Unknown error");
             return ERROR(SYS_UNKNOWN_ERROR, "Unknown error");
         }
     }
