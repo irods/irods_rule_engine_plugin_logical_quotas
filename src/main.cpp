@@ -25,7 +25,6 @@ namespace
 
     using log         = irods::experimental::log;
     using json        = nlohmann::json;
-    // clang-format on
 
     irods::instance_configuration_map instance_configs;
 
@@ -69,6 +68,7 @@ namespace
         {"pep_api_rm_coll_post",                handler::pep_api_rm_coll::post},
         {"pep_api_rm_coll_pre",                 handler::pep_api_rm_coll::pre}
     };
+    // clang-format on
 
     //
     // Rule Engine Plugin
