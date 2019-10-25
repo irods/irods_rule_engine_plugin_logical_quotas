@@ -76,7 +76,7 @@ namespace
     auto log_exception_message(const char* _msg, irods::callback& _effect_handler) -> void;
 
     template <typename T>
-    auto get_input_object_ptr(std::list<boost::any>& _rule_arguments) -> T*;
+    auto get_pointer(std::list<boost::any>& _rule_arguments, int _index = 2) -> T*;
 
     template <typename Function>
     auto switch_user(ruleExecInfo_t& _rei, std::string_view _username, Function _func) -> void;
@@ -308,9 +308,9 @@ namespace
     }
 
     template <typename T>
-    auto get_input_object_ptr(std::list<boost::any>& _rule_arguments) -> T*
+    auto get_pointer(std::list<boost::any>& _rule_arguments, int _index) -> T*
     {
-        return boost::any_cast<T*>(*std::next(std::begin(_rule_arguments), 2));
+        return boost::any_cast<T*>(*std::next(std::begin(_rule_arguments), _index));
     }
 
     template <typename Function>
@@ -574,7 +574,7 @@ namespace irods::handler
         try
         {
             const auto& instance_config = _instance_configs.at(_instance_name);
-            auto* input = get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
+            auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = instance_config.attributes();
@@ -614,7 +614,7 @@ namespace irods::handler
     {
         try
         {
-            auto* input = get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
+            auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
@@ -647,7 +647,7 @@ namespace irods::handler
                                     irods::callback& _effect_handler) -> irods::error
     {
         try {
-            auto* input = get_input_object_ptr<dataObjInp_t>(_rule_arguments);
+            auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& instance_config = _instance_configs.at(_instance_name);
@@ -680,7 +680,7 @@ namespace irods::handler
     {
         try
         {
-            auto* input = get_input_object_ptr<dataObjInp_t>(_rule_arguments);
+            auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
@@ -706,7 +706,7 @@ namespace irods::handler
                                    irods::callback& _effect_handler) -> irods::error
     {
         try {
-            auto* input = get_input_object_ptr<dataObjInp_t>(_rule_arguments);
+            auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& instance_config = _instance_configs.at(_instance_name);
@@ -747,7 +747,7 @@ namespace irods::handler
     {
         try
         {
-            auto* input = get_input_object_ptr<dataObjInp_t>(_rule_arguments);
+            auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
@@ -780,7 +780,7 @@ namespace irods::handler
         try
         {
             const auto& instance_config = _instance_configs.at(_instance_name);
-            auto* input = get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
+            auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = instance_config.attributes();
@@ -833,7 +833,7 @@ namespace irods::handler
     {
         try
         {
-            auto* input = get_input_object_ptr<dataObjCopyInp_t>(_rule_arguments);
+            auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
@@ -893,7 +893,7 @@ namespace irods::handler
     {
         try
         {
-            auto* input = get_input_object_ptr<dataObjInp_t>(_rule_arguments);
+            auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
@@ -918,7 +918,7 @@ namespace irods::handler
     {
         try
         {
-            auto* input = get_input_object_ptr<dataObjInp_t>(_rule_arguments);
+            auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
@@ -944,17 +944,15 @@ namespace irods::handler
         try
         {
             const auto& instance_config = _instance_configs.at(_instance_name);
-            auto* input = get_input_object_ptr<openedDataObjInp_t>(_rule_arguments);
+            auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
+            auto* bbuf = get_pointer<bytesBuf_t>(_rule_arguments, 3);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = instance_config.attributes();
-            const auto& l1desc = irods::get_l1desc(input->l1descInx);
-            const auto* path = l1desc.dataObjInfo->objPath;
+            const auto* path = irods::get_l1desc(input->l1descInx).dataObjInfo->objPath; 
 
-            log::rule_engine::debug(fmt::format("DATA OBJ WRITE PRE - BYTES WRITTEN => {}", l1desc.bytesWritten));
-
-            for_each_monitored_collection(conn, attrs, path, [&conn, &attrs, input](const auto&, const auto& _info) {
-                throw_if_maximum_size_in_bytes_violation(attrs, _info, input->bytesWritten);
+            for_each_monitored_collection(conn, attrs, path, [&conn, &attrs, bbuf](const auto&, const auto& _info) {
+                throw_if_maximum_size_in_bytes_violation(attrs, _info, bbuf->len);
             });
         }
         catch (const std::exception& e)
@@ -973,16 +971,15 @@ namespace irods::handler
     {
         try
         {
-            auto* input = get_input_object_ptr<openedDataObjInp_t>(_rule_arguments);
+            auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
-            const auto* path = irods::get_l1desc(input->l1descInx).dataObjInfo->objPath;
+            const auto& l1desc = irods::get_l1desc(input->l1descInx);
+            const auto* path = l1desc.dataObjInfo->objPath;
 
-            log::rule_engine::debug(fmt::format("DATA OBJ WRITE POST - BYTES WRITTEN => {}", input->bytesWritten));
-
-            for_each_monitored_collection(conn, attrs, path, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
-                update_data_object_count_and_size(conn, attrs, _collection, _info, 0, input->bytesWritten);
+            for_each_monitored_collection(conn, attrs, path, [&conn, &attrs, &l1desc](const auto& _collection, const auto& _info) {
+                update_data_object_count_and_size(conn, attrs, _collection, _info, 0, l1desc.bytesWritten);
             });
         }
         catch (const std::exception& e)
@@ -1001,7 +998,7 @@ namespace irods::handler
     {
         try
         {
-            auto* input = get_input_object_ptr<modAVUMetadataInp_t>(_rule_arguments);
+            auto* input = get_pointer<modAVUMetadataInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
@@ -1043,7 +1040,7 @@ namespace irods::handler
     {
         try
         {
-            auto* input = get_input_object_ptr<collInp_t>(_rule_arguments);
+            auto* input = get_pointer<collInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
@@ -1068,7 +1065,7 @@ namespace irods::handler
     {
         try
         {
-            auto* input = get_input_object_ptr<collInp_t>(_rule_arguments);
+            auto* input = get_pointer<collInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();

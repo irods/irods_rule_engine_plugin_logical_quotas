@@ -62,4 +62,23 @@ still be allowed to process the same PEPs without any issues.
 ```
 
 ## How To Use
-Navigate to the **scripts** directory and use `lq_cmd.sh <rule_file.r>` to execute operations.
+A convenience script has been provided in the **<repo>/scripts** directory.
+
+To use it, you will first need to edit the **<rule_file.r>** files. Within these files, you'll need to set the
+collection and any other properties that are important to your deployment.
+
+Navigate to the **scripts** directory and use `./lq_cmd.sh <rule_file.r>` to execute operations.
+
+The following operations are available:
+- start_monitoring
+- stop_monitoring
+- set_maximum_number_of_data_objects
+- set_maximum_size_in_bytes
+- recalculate_totals
+- count_total_number_of_data_objects
+- count_total_size_in_bytes
+- unset_maximum_number_of_data_objects
+- unset_maximum_size_in_bytes
+- unset_total_number_of_data_objects
+- unset_total_size_in_bytes
+
