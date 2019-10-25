@@ -10,50 +10,61 @@
 #include <irods/rodsError.h>
 #include <irods/rodsErrorTable.h>
 
+#include <iterator>
 #include <json.hpp>
 #include <fmt/format.h>
 #include <boost/any.hpp>
 
+#include <map>
+#include <algorithm>
+
 namespace
 {
     // clang-format off
-    using log  = irods::experimental::log;
-    using json = nlohmann::json;
+    namespace handler = irods::handler;
+
+    using log         = irods::experimental::log;
+    using json        = nlohmann::json;
     // clang-format on
 
     irods::instance_configuration_map instance_configs;
 
-    // This is a "sorted" list of all operations supported by this REP.
-    // This will allow us to do binary search on the list for lookups.
-    constexpr std::array<std::string_view, 28> peps{
-        "logical_quotas_count_total_number_of_data_objects",
-        "logical_quotas_count_total_size_in_bytes",
-        "logical_quotas_recalculate_totals",
-        "logical_quotas_set_maximum_number_of_data_objects",
-        "logical_quotas_set_maximum_size_in_bytes",
-        "logical_quotas_start_monitoring_collection",
-        "logical_quotas_stop_monitoring_collection",
-        "logical_quotas_unset_maximum_number_of_data_objects",
-        "logical_quotas_unset_maximum_size_in_bytes",
-        "logical_quotas_unset_total_number_of_data_objects",
-        "logical_quotas_unset_total_size_in_bytes",
-        "pep_api_data_obj_copy_post",
-        "pep_api_data_obj_copy_pre",
-        "pep_api_data_obj_open_and_stat_post",
-        "pep_api_data_obj_open_and_stat_pre",
-        "pep_api_data_obj_open_post",
-        "pep_api_data_obj_open_pre",
-        "pep_api_data_obj_put_post",
-        "pep_api_data_obj_put_pre",
-        "pep_api_data_obj_rename_post",
-        "pep_api_data_obj_rename_pre",
-        "pep_api_data_obj_unlink_post",
-        "pep_api_data_obj_unlink_pre",
-        "pep_api_data_obj_write_post",
-        "pep_api_data_obj_write_pre",
-        "pep_api_mod_avu_metadata_pre",
-        "pep_api_rm_coll_post",
-        "pep_api_rm_coll_pre"
+    using handler_type = std::function<irods::error(const std::string&,
+                                                    const irods::instance_configuration_map&,
+                                                    std::list<boost::any>&,
+                                                    irods::callback&)>;
+
+    using handler_map_type = std::map<std::string_view, handler_type>;
+
+    const handler_map_type handlers{
+        {"logical_quotas_count_total_number_of_data_objects",   handler::logical_quotas_count_total_number_of_data_objects},
+        {"logical_quotas_count_total_size_in_bytes",            handler::logical_quotas_count_total_size_in_bytes},
+        {"logical_quotas_recalculate_totals",                   handler::logical_quotas_recalculate_totals},
+        {"logical_quotas_set_maximum_number_of_data_objects",   handler::logical_quotas_set_maximum_number_of_data_objects},
+        {"logical_quotas_set_maximum_size_in_bytes",            handler::logical_quotas_set_maximum_size_in_bytes},
+        {"logical_quotas_start_monitoring_collection",          handler::logical_quotas_start_monitoring_collection},
+        {"logical_quotas_stop_monitoring_collection",           handler::logical_quotas_stop_monitoring_collection},
+        {"logical_quotas_unset_maximum_number_of_data_objects", handler::logical_quotas_unset_maximum_number_of_data_objects},
+        {"logical_quotas_unset_maximum_size_in_bytes",          handler::logical_quotas_unset_maximum_size_in_bytes},
+        {"logical_quotas_unset_total_number_of_data_objects",   handler::logical_quotas_unset_total_number_of_data_objects},
+        {"logical_quotas_unset_total_size_in_bytes",            handler::logical_quotas_unset_total_size_in_bytes},
+        {"pep_api_data_obj_copy_post",                          handler::pep_api_data_obj_copy_post},
+        {"pep_api_data_obj_copy_pre",                           handler::pep_api_data_obj_copy_pre},
+        {"pep_api_data_obj_open_and_stat_post",                 handler::pep_api_data_obj_open::post},
+        {"pep_api_data_obj_open_and_stat_pre",                  handler::pep_api_data_obj_open::pre},
+        {"pep_api_data_obj_open_post",                          handler::pep_api_data_obj_open::post},
+        {"pep_api_data_obj_open_pre",                           handler::pep_api_data_obj_open::pre},
+        {"pep_api_data_obj_put_post",                           handler::pep_api_data_obj_put::post},
+        {"pep_api_data_obj_put_pre",                            handler::pep_api_data_obj_put::pre},
+        {"pep_api_data_obj_rename_post",                        handler::pep_api_data_obj_rename_post},
+        {"pep_api_data_obj_rename_pre",                         handler::pep_api_data_obj_rename_pre},
+        {"pep_api_data_obj_unlink_post",                        handler::pep_api_data_obj_unlink::post},
+        {"pep_api_data_obj_unlink_pre",                         handler::pep_api_data_obj_unlink::pre},
+        {"pep_api_data_obj_write_post",                         handler::pep_api_data_obj_write::post},
+        {"pep_api_data_obj_write_pre",                          handler::pep_api_data_obj_write::pre},
+        {"pep_api_mod_avu_metadata_pre",                        handler::pep_api_mod_avu_metadata_pre},
+        {"pep_api_rm_coll_post",                                handler::pep_api_rm_coll::post},
+        {"pep_api_rm_coll_pre",                                 handler::pep_api_rm_coll::pre}
     };
 
     //
@@ -130,13 +141,16 @@ namespace
                              const std::string& _rule_name,
                              bool& _exists)
     {
-        _exists = std::binary_search(std::begin(peps), std::end(peps), _rule_name);
+        _exists = (handlers.find(_rule_name) != std::end(handlers));
         return SUCCESS();
     }
 
     irods::error list_rules(irods::default_re_ctx&, std::vector<std::string>& _rules)
     {
-        _rules.insert(std::end(_rules), std::begin(peps), std::end(peps));
+        std::transform(std::begin(handlers), std::end(handlers), std::back_inserter(_rules), [](auto _v) {
+            return std::string{_v.first};
+        });
+
         return SUCCESS();
     }
 
@@ -146,47 +160,7 @@ namespace
                            std::list<boost::any>& _rule_arguments,
                            irods::callback _effect_handler)
     {
-        namespace handler = irods::handler;
-
-        using handler_type = std::function<irods::error(const std::string&,
-                                                        const irods::instance_configuration_map&,
-                                                        std::list<boost::any>&,
-                                                        irods::callback&)>;
-
-        constexpr auto next_int = [] { static int i = 0; return i++; };
-
-        static const std::map<std::string_view, handler_type> handlers{
-            {peps[next_int()], handler::logical_quotas_count_total_number_of_data_objects},
-            {peps[next_int()], handler::logical_quotas_count_total_size_in_bytes},
-            {peps[next_int()], handler::logical_quotas_recalculate_totals},
-            {peps[next_int()], handler::logical_quotas_set_maximum_number_of_data_objects},
-            {peps[next_int()], handler::logical_quotas_set_maximum_size_in_bytes},
-            {peps[next_int()], handler::logical_quotas_start_monitoring_collection},
-            {peps[next_int()], handler::logical_quotas_stop_monitoring_collection},
-            {peps[next_int()], handler::logical_quotas_unset_maximum_number_of_data_objects},
-            {peps[next_int()], handler::logical_quotas_unset_maximum_size_in_bytes},
-            {peps[next_int()], handler::logical_quotas_unset_total_number_of_data_objects},
-            {peps[next_int()], handler::logical_quotas_unset_total_size_in_bytes},
-            {peps[next_int()], handler::pep_api_data_obj_copy_post},
-            {peps[next_int()], handler::pep_api_data_obj_copy_pre},
-            {peps[next_int()], handler::pep_api_data_obj_open::post},
-            {peps[next_int()], handler::pep_api_data_obj_open::post},
-            {peps[next_int()], handler::pep_api_data_obj_open::pre},
-            {peps[next_int()], handler::pep_api_data_obj_open::pre},
-            {peps[next_int()], handler::pep_api_data_obj_put::post},
-            {peps[next_int()], handler::pep_api_data_obj_put::pre},
-            {peps[next_int()], handler::pep_api_data_obj_rename_post},
-            {peps[next_int()], handler::pep_api_data_obj_rename_pre},
-            {peps[next_int()], handler::pep_api_data_obj_unlink::post},
-            {peps[next_int()], handler::pep_api_data_obj_unlink::pre},
-            {peps[next_int()], handler::pep_api_data_obj_write::post},
-            {peps[next_int()], handler::pep_api_data_obj_write::pre},
-            {peps[next_int()], handler::pep_api_mod_avu_metadata_pre},
-            {peps[next_int()], handler::pep_api_rm_coll::post},
-            {peps[next_int()], handler::pep_api_rm_coll::pre}
-        };
-
-        if (auto iter = handlers.find(_rule_name); std::end(handlers) != iter) {
+        if (const auto iter = handlers.find(_rule_name); iter != std::end(handlers)) {
             return (iter->second)(_instance_name, instance_configs, _rule_arguments, _effect_handler);
         }
 
@@ -221,32 +195,11 @@ namespace
 
             log::rule_engine::debug({{"function", __func__}, {"json_arguments", json_args.dump()}});
 
-            namespace handler = irods::handler;
-
-            using handler_type = std::function<irods::error(const std::string&,
-                                                            const irods::instance_configuration_map&,
-                                                            std::list<boost::any>&,
-                                                            irods::callback&)>;
-
-            constexpr auto next_int = [] { static int i = 0; return i++; };
-
-            static const std::map<std::string_view, handler_type> handlers{
-                {peps[next_int()], handler::logical_quotas_count_total_number_of_data_objects},
-                {peps[next_int()], handler::logical_quotas_count_total_size_in_bytes},
-                {peps[next_int()], handler::logical_quotas_recalculate_totals},
-                {peps[next_int()], handler::logical_quotas_set_maximum_number_of_data_objects},
-                {peps[next_int()], handler::logical_quotas_set_maximum_size_in_bytes},
-                {peps[next_int()], handler::logical_quotas_start_monitoring_collection},
-                {peps[next_int()], handler::logical_quotas_stop_monitoring_collection},
-                {peps[next_int()], handler::logical_quotas_unset_maximum_number_of_data_objects},
-                {peps[next_int()], handler::logical_quotas_unset_maximum_size_in_bytes},
-                {peps[next_int()], handler::logical_quotas_unset_total_number_of_data_objects},
-                {peps[next_int()], handler::logical_quotas_unset_total_size_in_bytes}
-            };
-
             const auto op = json_args.at("operation").get<std::string>();
 
-            if (auto iter = handlers.find(op); std::end(handlers) != iter) {
+            // Only allow execution of handlers that have a prefix of "logical_quotas_".
+            // "p" is used because the PEP handlers come after it in lexicographic order.
+            if (const auto iter = handlers.find(op); iter->first < "p") {
                 std::list<boost::any> args{json_args.at("collection").get<std::string>() };
 
                 if (op == "logical_quotas_set_maximum_number_of_data_objects" ||
