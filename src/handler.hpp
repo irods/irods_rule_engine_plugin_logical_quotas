@@ -81,6 +81,16 @@ namespace handler {
                                     std::list<boost::any>& _rule_arguments,
                                     irods::callback& _effect_handler) -> irods::error;
 
+    auto pep_api_data_obj_create_pre(const std::string& _instance_name,
+                                     const instance_configuration_map& _instance_configs,
+                                     std::list<boost::any>& _rule_arguments,
+                                     irods::callback& _effect_handler) -> irods::error;
+
+    auto pep_api_data_obj_create_post(const std::string& _instance_name,
+                                      const instance_configuration_map& _instance_configs,
+                                      std::list<boost::any>& _rule_arguments,
+                                      irods::callback& _effect_handler) -> irods::error;
+
     class pep_api_data_obj_open final
     {
     public:

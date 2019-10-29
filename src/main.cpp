@@ -49,23 +49,27 @@ namespace
     };
 
     const handler_map_type pep_handlers{
-        {"pep_api_data_obj_copy_post",          handler::pep_api_data_obj_copy_post},
-        {"pep_api_data_obj_copy_pre",           handler::pep_api_data_obj_copy_pre},
-        {"pep_api_data_obj_open_and_stat_post", handler::pep_api_data_obj_open::post},
-        {"pep_api_data_obj_open_and_stat_pre",  handler::pep_api_data_obj_open::pre},
-        {"pep_api_data_obj_open_post",          handler::pep_api_data_obj_open::post},
-        {"pep_api_data_obj_open_pre",           handler::pep_api_data_obj_open::pre},
-        {"pep_api_data_obj_put_post",           handler::pep_api_data_obj_put::post},
-        {"pep_api_data_obj_put_pre",            handler::pep_api_data_obj_put::pre},
-        {"pep_api_data_obj_rename_post",        handler::pep_api_data_obj_rename_post},
-        {"pep_api_data_obj_rename_pre",         handler::pep_api_data_obj_rename_pre},
-        {"pep_api_data_obj_unlink_post",        handler::pep_api_data_obj_unlink::post},
-        {"pep_api_data_obj_unlink_pre",         handler::pep_api_data_obj_unlink::pre},
-        {"pep_api_data_obj_write_post",         handler::pep_api_data_obj_write::post},
-        {"pep_api_data_obj_write_pre",          handler::pep_api_data_obj_write::pre},
-        {"pep_api_mod_avu_metadata_pre",        handler::pep_api_mod_avu_metadata_pre},
-        {"pep_api_rm_coll_post",                handler::pep_api_rm_coll::post},
-        {"pep_api_rm_coll_pre",                 handler::pep_api_rm_coll::pre}
+        {"pep_api_data_obj_copy_post",            handler::pep_api_data_obj_copy_post},
+        {"pep_api_data_obj_copy_pre",             handler::pep_api_data_obj_copy_pre},
+        {"pep_api_data_obj_create_and_stat_post", handler::pep_api_data_obj_create_post},
+        {"pep_api_data_obj_create_and_stat_pre",  handler::pep_api_data_obj_create_pre},
+        {"pep_api_data_obj_create_post",          handler::pep_api_data_obj_create_post},
+        {"pep_api_data_obj_create_pre",           handler::pep_api_data_obj_create_pre},
+        {"pep_api_data_obj_open_and_stat_post",   handler::pep_api_data_obj_open::post},
+        {"pep_api_data_obj_open_and_stat_pre",    handler::pep_api_data_obj_open::pre},
+        {"pep_api_data_obj_open_post",            handler::pep_api_data_obj_open::post},
+        {"pep_api_data_obj_open_pre",             handler::pep_api_data_obj_open::pre},
+        {"pep_api_data_obj_put_post",             handler::pep_api_data_obj_put::post},
+        {"pep_api_data_obj_put_pre",              handler::pep_api_data_obj_put::pre},
+        {"pep_api_data_obj_rename_post",          handler::pep_api_data_obj_rename_post},
+        {"pep_api_data_obj_rename_pre",           handler::pep_api_data_obj_rename_pre},
+        {"pep_api_data_obj_unlink_post",          handler::pep_api_data_obj_unlink::post},
+        {"pep_api_data_obj_unlink_pre",           handler::pep_api_data_obj_unlink::pre},
+        {"pep_api_data_obj_write_post",           handler::pep_api_data_obj_write::post},
+        {"pep_api_data_obj_write_pre",            handler::pep_api_data_obj_write::pre},
+        {"pep_api_mod_avu_metadata_pre",          handler::pep_api_mod_avu_metadata_pre},
+        {"pep_api_rm_coll_post",                  handler::pep_api_rm_coll::post},
+        {"pep_api_rm_coll_pre",                   handler::pep_api_rm_coll::pre}
     };
     // clang-format on
 

@@ -655,6 +655,59 @@ namespace handler {
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
+    auto pep_api_data_obj_create_pre(const std::string& _instance_name,
+                                     const instance_configuration_map& _instance_configs,
+                                     std::list<boost::any>& _rule_arguments,
+                                     irods::callback& _effect_handler) -> irods::error
+    {
+        try {
+            auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
+            auto& rei = get_rei(_effect_handler);
+            auto& conn = *rei.rsComm;
+            const auto& instance_config = _instance_configs.at(_instance_name);
+            const auto& attrs = instance_config.attributes();
+
+            for_each_monitored_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
+                throw_if_maximum_number_of_data_objects_violation(attrs, _info, 1);
+            });
+        }
+        catch (const logical_quotas_error& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
+        }
+        catch (const std::exception& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return CODE(RULE_ENGINE_CONTINUE);
+    }
+
+    auto pep_api_data_obj_create_post(const std::string& _instance_name,
+                                      const instance_configuration_map& _instance_configs,
+                                      std::list<boost::any>& _rule_arguments,
+                                      irods::callback& _effect_handler) -> irods::error
+    {
+        try
+        {
+            auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
+            auto& rei = get_rei(_effect_handler);
+            auto& conn = *rei.rsComm;
+            const auto& attrs = _instance_configs.at(_instance_name).attributes();
+
+            for_each_monitored_collection(conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
+                update_data_object_count_and_size(conn, attrs, _collection, _info, 1, 0);
+            });
+        }
+        catch (const std::exception& e)
+        {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return CODE(RULE_ENGINE_CONTINUE);
+    }
+
     bool pep_api_data_obj_open::increment_object_count_ = false;
 
     auto pep_api_data_obj_open::pre(const std::string& _instance_name,
