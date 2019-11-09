@@ -113,16 +113,36 @@ namespace
         }
 
         try {
+            const auto get_prop = [](const json& _config, auto&& _name) -> std::string
+            {
+                try {
+                    return _config.at(_name).template get<std::string>();
+                }
+                catch (...) {
+                    throw std::runtime_error{fmt::format("Logical Quotas Policy: Failed to find rule engine "
+                                                         "plugin configuration property [{}]", _name)};
+                }
+            };
+
             for (const auto& re : config.at(irods::CFG_PLUGIN_CONFIGURATION_KW).at(irods::PLUGIN_TYPE_RULE_ENGINE)) {
                 if (_instance_name == re.at(irods::CFG_INSTANCE_NAME_KW).get<std::string>()) {
                     const auto& plugin_config = re.at(irods::CFG_PLUGIN_SPECIFIC_CONFIGURATION_KW);
-                    const auto& attr_names = plugin_config.at("metadata_attribute_names");
 
-                    irods::instance_configuration instance_config{{plugin_config.at("namespace").get<std::string>(),
-                                                                   attr_names.at("maximum_number_of_data_objects").get<std::string>(),
-                                                                   attr_names.at("maximum_size_in_bytes").get<std::string>(),
-                                                                   attr_names.at("total_number_of_data_objects").get<std::string>(),
-                                                                   attr_names.at("total_size_in_bytes").get<std::string>()}};
+                    const auto& attr_names = [&plugin_config] {
+                        try {
+                            return plugin_config.at("metadata_attribute_names");
+                        }
+                        catch (...) {
+                            throw std::runtime_error{fmt::format("Logical Quotas Policy: Failed to find rule engine "
+                                                                 "plugin configuration property [metadata_attribute_name]")};
+                        }
+                    }();
+
+                    irods::instance_configuration instance_config{{get_prop(plugin_config, "namespace"),
+                                                                   get_prop(attr_names, "maximum_number_of_data_objects"),
+                                                                   get_prop(attr_names, "maximum_size_in_bytes"),
+                                                                   get_prop(attr_names, "total_number_of_data_objects"),
+                                                                   get_prop(attr_names, "total_size_in_bytes")}};
 
                     instance_configs.insert_or_assign(_instance_name, instance_config);
 
@@ -134,7 +154,7 @@ namespace
             // clang-format off
             log::rule_engine::error({{"rule_engine_plugin", "logical_quotas"},
                                      {"rule_engine_plugin_function", __func__},
-                                     {"log_message", e.what()}});
+                                     {"log_message", "Bad rule engine plugin configuration"}});
             // clang-format on
 
             return ERROR(SYS_CONFIG_FILE_ERR, e.what());
