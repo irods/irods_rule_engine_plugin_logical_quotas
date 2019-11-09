@@ -9,6 +9,7 @@
 #include <irods/irods_at_scope_exit.hpp>
 #include <irods/irods_get_l1desc.hpp>
 #include <irods/modAVUMetadata.h>
+#include <irods/rodsErrorTable.h>
 
 #include <fmt/format.h>
 
@@ -17,6 +18,7 @@
 #include <vector>
 #include <tuple>
 #include <functional>
+#include <stdexcept>
 
 namespace
 {
@@ -89,6 +91,9 @@ namespace
                                        fs::path _collection,
                                        Function _func) -> void;
 
+    template <typename Value, typename Map>
+    auto get_attribute_value(const Map& _map, std::string_view _key) -> Value;
+
     //
     // Function Implementations
     //
@@ -99,7 +104,7 @@ namespace
 
         if (const auto result = _effect_handler("unsafe_ms_ctx", &rei); !result.ok()) {
             const auto error_code = static_cast<irods::logical_quotas_error::error_code_type>(result.code());
-            throw irods::logical_quotas_error{"Failed to get rule execution information", error_code};
+            throw irods::logical_quotas_error{"Logical Quotas Policy: Failed to get rule execution information", error_code};
         }
 
         return *rei;
@@ -175,8 +180,9 @@ namespace
         const auto& max_attr_name = _attrs.maximum_number_of_data_objects();
 
         if (_tracking_info.find(max_attr_name) != std::end(_tracking_info)) {
-            if (_tracking_info.at(_attrs.total_number_of_data_objects()) + _delta > _tracking_info.at(max_attr_name)) {
-                throw irods::logical_quotas_error{"Policy Violation: Adding object exceeds maximum number of objects limit", SYS_RESC_QUOTA_EXCEEDED};
+            if (get_attribute_value<size_type>(_tracking_info, _attrs.total_number_of_data_objects()) + _delta > _tracking_info.at(max_attr_name)) {
+                throw irods::logical_quotas_error{"Logical Quotas Policy Violation: Adding object exceeds maximum number of objects limit",
+                                                  SYS_RESC_QUOTA_EXCEEDED};
             }
         }
     }
@@ -188,8 +194,9 @@ namespace
         const auto& max_attr_name = _attrs.maximum_size_in_bytes();
 
         if (_tracking_info.find(max_attr_name) != std::end(_tracking_info)) {
-            if (_tracking_info.at(_attrs.total_size_in_bytes()) + _delta > _tracking_info.at(max_attr_name)) {
-                throw irods::logical_quotas_error{"Policy Violation: Adding object exceeds maximum data size in bytes limit", SYS_RESC_QUOTA_EXCEEDED};
+            if (get_attribute_value<size_type>(_tracking_info, _attrs.total_size_in_bytes()) + _delta > _tracking_info.at(max_attr_name)) {
+                throw irods::logical_quotas_error{"Logical Quotas Policy Violation: Adding object exceeds maximum data size in bytes limit",
+                                                  SYS_RESC_QUOTA_EXCEEDED};
             }
         }
     }
@@ -245,13 +252,21 @@ namespace
                                            size_type _size_in_bytes_delta) -> void
     {
         if (0 != _data_objects_delta) {
-            const auto new_object_count = std::to_string(_info.at(_attrs.total_number_of_data_objects()) + _data_objects_delta);
-            fs::server::set_metadata(_conn, _collection, {_attrs.total_number_of_data_objects(), new_object_count});
+            const auto& objects_attr = _attrs.total_number_of_data_objects();
+
+            if (const auto iter = _info.find(objects_attr); std::end(_info) != iter) {
+                const auto new_object_count = std::to_string(iter->second + _data_objects_delta);
+                fs::server::set_metadata(_conn, _collection, {objects_attr, new_object_count});
+            }
         }
 
         if (0 != _size_in_bytes_delta) {
-            const auto new_size_in_bytes = std::to_string(_info.at(_attrs.total_size_in_bytes()) + _size_in_bytes_delta);
-            fs::server::set_metadata(_conn, _collection, {_attrs.total_size_in_bytes(), new_size_in_bytes});
+            const auto& size_attr = _attrs.total_size_in_bytes();
+
+            if (const auto iter = _info.find(size_attr); std::end(_info) != iter) {
+                const auto new_size_in_bytes = std::to_string(iter->second + _size_in_bytes_delta);
+                fs::server::set_metadata(_conn, _collection, {size_attr, new_size_in_bytes});
+            }
         }
     }
 
@@ -283,14 +298,8 @@ namespace
 
                 const auto info = get_monitored_collection_info(conn, attrs, path);
 
-                try {
-                    for (auto&& attribute_name : _func(attrs)) {
-                        fs::server::remove_metadata(conn, path, {*attribute_name,  std::to_string(info.at(*attribute_name))});
-                    }
-                }
-                catch (const std::out_of_range& e) {
-                    log::rule_engine::error(e.what());
-                    throw std::runtime_error{"Logical Quotas Policy: Missing key"};
+                for (auto&& attribute_name : _func(attrs)) {
+                    fs::server::remove_metadata(conn, path, {*attribute_name,  std::to_string(get_attribute<size_type>(info, *attribute_name))});
                 }
             });
         }
@@ -321,7 +330,7 @@ namespace
         auto& user = _rei.rsComm->clientUser;
 
         if (user.authInfo.authFlag < LOCAL_PRIV_USER_AUTH) {
-            throw irods::switch_user_error{"Logical Quotas Policy: Insufficient privileges", SYS_NO_API_PRIV};
+            throw irods::switch_user_error{"Logical Quotas Policy: Insufficient privileges", CAT_INSUFFICIENT_PRIVILEGE_LEVEL};
         }
 
         const std::string old_username = user.userName;
@@ -348,6 +357,16 @@ namespace
             auto info = get_monitored_collection_info(_conn, _attrs, *collection);
             _func(*collection, info);
         }
+    }
+
+    template <typename Value, typename Map>
+    auto get_attribute_value(const Map& _map, std::string_view _key) -> Value
+    {
+        if (const auto iter = _map.find(_key.data()); std::end(_map) != iter) {
+            return iter->second;
+        }
+
+        throw std::runtime_error{fmt::format("Logical Quotas Policy: Failed to find policy metadata [{}]", _key)};
     }
 } // anonymous namespace
 
@@ -1060,7 +1079,7 @@ namespace irods::handler
 
             const auto is_rodsadmin = (conn.clientUser.authInfo.authFlag >= LOCAL_PRIV_USER_AUTH);
             const auto is_modification = [input] {
-                const auto ops = {"set", "add", "rm"};
+                const auto ops = {"set", "add", "adda", "mod", "rm", "rmw", "rmi"}; // TODO "add" and "adda" seem questionable.
                 return std::any_of(std::begin(ops), std::end(ops), [input](std::string_view _op) {
                     return _op == input->arg0;
                 });
@@ -1075,7 +1094,7 @@ namespace irods::handler
                 };
 
                 if (std::any_of(std::begin(keys), std::end(keys), [input](const auto& _key) { return _key == input->arg3; })) {
-                    return ERROR(SYS_INVALID_INPUT_PARAM, "Logical Quotas Policy: User not allowed to modify administrative metadata");
+                    return ERROR(CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "Logical Quotas Policy: User not allowed to modify administrative metadata");
                 }
             }
         }
