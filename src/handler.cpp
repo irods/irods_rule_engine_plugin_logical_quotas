@@ -19,6 +19,7 @@
 #include <tuple>
 #include <functional>
 #include <stdexcept>
+#include <algorithm>
 
 namespace
 {
@@ -29,6 +30,35 @@ namespace
     using size_type        = irods::handler::size_type;
     using quotas_info_type = std::unordered_map<std::string, size_type>;
     // clang-format on
+
+    //
+    // Classes
+    //
+
+    class parent_path
+    {
+    public:
+        explicit parent_path(const fs::path& _p)
+            : p_{_p}
+        {
+        }
+
+        parent_path(const parent_path&) = delete;
+        auto operator=(const parent_path&) -> parent_path& = delete;
+
+        auto of(const fs::path& _p) -> bool
+        {
+            if (p_ == _p) {
+                return false;
+            }
+
+            const auto end = std::end(_p);
+            return std::search(std::begin(_p), end, std::begin(p_), std::begin(p_)) != end;
+        }
+
+    private:
+        const fs::path& p_;
+    }; // class parent_path
 
     //
     // Function Prototypes
@@ -846,10 +876,10 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
-    auto pep_api_data_obj_rename_pre(const std::string& _instance_name,
-                                     const instance_configuration_map& _instance_configs,
-                                     std::list<boost::any>& _rule_arguments,
-                                     irods::callback& _effect_handler) -> irods::error
+    auto pep_api_data_obj_rename::pre(const std::string& _instance_name,
+                                      const instance_configuration_map& _instance_configs,
+                                      std::list<boost::any>& _rule_arguments,
+                                      irods::callback& _effect_handler) -> irods::error
     {
         try
         {
@@ -859,32 +889,63 @@ namespace irods::handler
             auto& conn = *rei.rsComm;
             const auto& attrs = instance_config.attributes();
 
+            if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
+                data_objects_ = 1;
+                size_in_bytes_ = fs::server::data_object_size(conn, input->srcDataObjInp.objPath);
+            }
+            else if (fs::server::is_collection(status)) {
+                std::tie(data_objects_, size_in_bytes_) = compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
+            }
+            else {
+                throw logical_quotas_error{"Logical Quotas Policy: Invalid object type", SYS_INTERNAL_ERR};
+            }
+
             {
                 auto src_path = get_monitored_parent_collection(conn, attrs, input->srcDataObjInp.objPath);
                 auto dst_path = get_monitored_parent_collection(conn, attrs, input->destDataObjInp.objPath);
 
-                // Return if any of the following is true:
-                // - The paths are std::nullopt.
-                // - The paths are not std::nullopt and are equal.
-                // - The destination path is a child of the source path.
-                if (src_path == dst_path || (src_path && dst_path && *src_path < *dst_path)) {
-                    return CODE(RULE_ENGINE_CONTINUE);
+                if (src_path && dst_path) {
+                    if (*src_path == *dst_path) {
+                        return CODE(RULE_ENGINE_CONTINUE);
+                    }
+
+                    // Moving object(s) from a parent collection to a child collection.
+                    if (parent_path{*dst_path}.of(*src_path)) {
+                        for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
+                            if (parent_path{_collection}.of(*src_path)) {
+                                throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
+                                throw_if_maximum_size_in_bytes_violation(attrs, _info, size_in_bytes_);
+                            }
+                        });
+                    }
+                    // Moving object(s) from a child collection to a parent collection.
+                    else if (parent_path{*src_path}.of(*dst_path)) {
+                        for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
+                            if (parent_path{_collection}.of(*dst_path)) {
+                                throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
+                                throw_if_maximum_size_in_bytes_violation(attrs, _info, size_in_bytes_);
+                            }
+                        });
+                    }
+                    // Moving objects(s) between unrelated collection trees.
+                    else {
+                        for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto&, const auto& _info) {
+                            throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
+                            throw_if_maximum_size_in_bytes_violation(attrs, _info, size_in_bytes_);
+                        });
+                    }
+                }
+                else if (dst_path) {
+                    for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto&, const auto& _info) {
+                        throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
+                        throw_if_maximum_size_in_bytes_violation(attrs, _info, size_in_bytes_);
+                    });
                 }
             }
 
             for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
-                if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
-                    throw_if_maximum_number_of_data_objects_violation(attrs, _info, 1);
-                    throw_if_maximum_size_in_bytes_violation(attrs, _info, fs::server::data_object_size(conn, input->srcDataObjInp.objPath));
-                }
-                else if (fs::server::is_collection(status)) {
-                    const auto [objects, bytes] = compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
-                    throw_if_maximum_number_of_data_objects_violation(attrs, _info, objects);
-                    throw_if_maximum_size_in_bytes_violation(attrs, _info, bytes);
-                }
-                else {
-                    throw logical_quotas_error{"Logical Quotas Policy: Invalid object type", SYS_INTERNAL_ERR};
-                }
+                throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
+                throw_if_maximum_size_in_bytes_violation(attrs, _info, size_in_bytes_);
             });
         }
         catch (const logical_quotas_error& e) {
@@ -900,10 +961,10 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
-    auto pep_api_data_obj_rename_post(const std::string& _instance_name,
-                                      const instance_configuration_map& _instance_configs,
-                                      std::list<boost::any>& _rule_arguments,
-                                      irods::callback& _effect_handler) -> irods::error
+    auto pep_api_data_obj_rename::post(const std::string& _instance_name,
+                                       const instance_configuration_map& _instance_configs,
+                                       std::list<boost::any>& _rule_arguments,
+                                       irods::callback& _effect_handler) -> irods::error
     {
         try
         {
@@ -911,41 +972,72 @@ namespace irods::handler
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
+            auto src_path = get_monitored_parent_collection(conn, attrs, input->srcDataObjInp.objPath);
+            auto dst_path = get_monitored_parent_collection(conn, attrs, input->destDataObjInp.objPath);
 
-            {
-                auto src_path = get_monitored_parent_collection(conn, attrs, input->srcDataObjInp.objPath);
-                auto dst_path = get_monitored_parent_collection(conn, attrs, input->destDataObjInp.objPath);
+            // Cases
+            // ~~~~~
+            // * src_path and dst_path are monitored paths.
+            //   - src_path and dst_path are the same path
+            //     + Do nothing
+            //
+            //   - src_path is the parent of dst_path
+            //     + Update dst_path's metadata
+            //
+            //   - dst_path is the parent of src_path
+            //     + Update the src_path's metadata
+            //
+            // * src_path is monitored, but dst_path is not.
+            //   - Update the src_path's metadata
+            //
+            // * dst_path is monitored, but src_path is not.
+            //   - Update the dst_path's metadata
+            //
+            // * src_path and dst_path are not monitored paths.
+            //   - Do nothing
 
-                // Return if any of the following is true:
-                // - The paths are std::nullopt.
-                // - The paths are not std::nullopt and are equal.
-                // - The destination path is a child of the source path.
-                if (src_path == dst_path || (src_path && dst_path && *src_path < *dst_path)) {
+            if (src_path && dst_path) {
+                if (*src_path == *dst_path) {
                     return CODE(RULE_ENGINE_CONTINUE);
                 }
-            }
 
-            size_type objects = 0;
-            size_type bytes = 0;
+                // Moving object(s) from a parent collection to a child collection.
+                if (parent_path{*dst_path}.of(*src_path)) {
+                    for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
+                        if (parent_path{_collection}.of(*src_path)) {
+                            update_data_object_count_and_size(conn, attrs, _collection, _info, data_objects_, size_in_bytes_);
+                        }
+                    });
+                }
+                // Moving object(s) from a child collection to a parent collection.
+                else if (parent_path{*src_path}.of(*dst_path)) {
+                    for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
+                        if (parent_path{_collection}.of(*dst_path)) {
+                            update_data_object_count_and_size(conn, attrs, _collection, _info, -data_objects_, -size_in_bytes_);
+                        }
+                    });
+                }
+                // Moving objects(s) between unrelated collection trees.
+                else {
+                    for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
+                        update_data_object_count_and_size(conn, attrs, _collection, _info, data_objects_, size_in_bytes_);
+                    });
 
-            if (const auto status = fs::server::status(conn, input->destDataObjInp.objPath); fs::server::is_data_object(status)) {
-                objects = 1;
-                bytes = fs::server::data_object_size(conn, input->destDataObjInp.objPath);
+                    for_each_monitored_collection(conn, attrs, input->srcDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
+                        update_data_object_count_and_size(conn, attrs, _collection, _info, -data_objects_, -size_in_bytes_);
+                    });
+                }
             }
-            else if (fs::server::is_collection(status)) {
-                std::tie(objects, bytes) = compute_data_object_count_and_size(conn, input->destDataObjInp.objPath);
+            else if (src_path) {
+                for_each_monitored_collection(conn, attrs, input->srcDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
+                    update_data_object_count_and_size(conn, attrs, _collection, _info, -data_objects_, -size_in_bytes_);
+                });
             }
-            else {
-                throw logical_quotas_error{"Logical Quotas Policy: Invalid object type", SYS_INTERNAL_ERR};
+            else if (dst_path) {
+                for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
+                    update_data_object_count_and_size(conn, attrs, _collection, _info, data_objects_, size_in_bytes_);
+                });
             }
-
-            for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
-                update_data_object_count_and_size(conn, attrs, _collection, _info, objects, bytes);
-            });
-
-            for_each_monitored_collection(conn, attrs, input->srcDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
-                update_data_object_count_and_size(conn, attrs, _collection, _info, objects, bytes);
-            });
         }
         catch (const logical_quotas_error& e) {
             log_exception_message(e.what(), _effect_handler);
