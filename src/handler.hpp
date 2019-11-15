@@ -125,15 +125,23 @@ namespace irods::handler
         inline static bool forced_overwrite_ = false;
     }; // class pep_api_data_obj_put
 
-    auto pep_api_data_obj_rename_pre(const std::string& _instance_name,
-                                     const instance_configuration_map& _instance_configs,
-                                     std::list<boost::any>& _rule_arguments,
-                                     irods::callback& _effect_handler) -> irods::error;
+    class pep_api_data_obj_rename final
+    {
+    public:
+        static auto pre(const std::string& _instance_name,
+                        const instance_configuration_map& _instance_configs,
+                        std::list<boost::any>& _rule_arguments,
+                        irods::callback& _effect_handler) -> irods::error;
 
-    auto pep_api_data_obj_rename_post(const std::string& _instance_name,
-                                      const instance_configuration_map& _instance_configs,
-                                      std::list<boost::any>& _rule_arguments,
-                                      irods::callback& _effect_handler) -> irods::error;
+        static auto post(const std::string& _instance_name,
+                         const instance_configuration_map& _instance_configs,
+                         std::list<boost::any>& _rule_arguments,
+                         irods::callback& _effect_handler) -> irods::error;
+
+    private:
+        inline static size_type data_objects_ = 0;
+        inline static size_type size_in_bytes_ = 0;
+    }; // class pep_api_data_obj_rename
 
     class pep_api_data_obj_unlink final
     {
