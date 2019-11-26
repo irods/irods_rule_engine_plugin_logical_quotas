@@ -13,7 +13,10 @@
 
 namespace irods::handler
 {
-    using size_type = std::int64_t;
+    // clang-format off
+    using size_type          = std::int64_t;
+    using file_position_type = std::int64_t;
+    // clang-format on
 
     auto logical_quotas_start_monitoring_collection(const std::string& _instance_name,
                                                     const instance_configuration_map& _instance_configs,
@@ -70,27 +73,7 @@ namespace irods::handler
                                                   std::list<boost::any>& _rule_arguments,
                                                   irods::callback& _effect_handler) -> irods::error;
 
-    auto pep_api_data_obj_copy_pre(const std::string& _instance_name,
-                                   const instance_configuration_map& _instance_configs,
-                                   std::list<boost::any>& _rule_arguments,
-                                   irods::callback& _effect_handler) -> irods::error;
-
-    auto pep_api_data_obj_copy_post(const std::string& _instance_name,
-                                    const instance_configuration_map& _instance_configs,
-                                    std::list<boost::any>& _rule_arguments,
-                                    irods::callback& _effect_handler) -> irods::error;
-
-    auto pep_api_data_obj_create_pre(const std::string& _instance_name,
-                                     const instance_configuration_map& _instance_configs,
-                                     std::list<boost::any>& _rule_arguments,
-                                     irods::callback& _effect_handler) -> irods::error;
-
-    auto pep_api_data_obj_create_post(const std::string& _instance_name,
-                                      const instance_configuration_map& _instance_configs,
-                                      std::list<boost::any>& _rule_arguments,
-                                      irods::callback& _effect_handler) -> irods::error;
-
-    class pep_api_data_obj_open final
+    class pep_api_data_obj_copy final
     {
     public:
         static auto pre(const std::string& _instance_name,
@@ -104,8 +87,19 @@ namespace irods::handler
                          irods::callback& _effect_handler) -> irods::error;
 
     private:
-        inline static bool increment_object_count_ = false;
-    }; // class pep_api_data_obj_open
+        inline static size_type data_objects_ = 0;
+        inline static size_type size_in_bytes_ = 0;
+    }; // class pep_api_data_obj_copy
+
+    auto pep_api_data_obj_create_pre(const std::string& _instance_name,
+                                     const instance_configuration_map& _instance_configs,
+                                     std::list<boost::any>& _rule_arguments,
+                                     irods::callback& _effect_handler) -> irods::error;
+
+    auto pep_api_data_obj_create_post(const std::string& _instance_name,
+                                      const instance_configuration_map& _instance_configs,
+                                      std::list<boost::any>& _rule_arguments,
+                                      irods::callback& _effect_handler) -> irods::error;
 
     class pep_api_data_obj_put final
     {
@@ -160,6 +154,41 @@ namespace irods::handler
         inline static size_type size_in_bytes_ = 0;
     }; // class pep_api_data_obj_unlink
 
+    class pep_api_data_obj_open final
+    {
+    public:
+        static auto pre(const std::string& _instance_name,
+                        const instance_configuration_map& _instance_configs,
+                        std::list<boost::any>& _rule_arguments,
+                        irods::callback& _effect_handler) -> irods::error;
+
+        static auto post(const std::string& _instance_name,
+                         const instance_configuration_map& _instance_configs,
+                         std::list<boost::any>& _rule_arguments,
+                         irods::callback& _effect_handler) -> irods::error;
+
+    private:
+        inline static size_type data_objects_ = 0;
+        inline static size_type size_in_bytes_ = 0;
+    }; // class pep_api_data_obj_open
+
+    class pep_api_data_obj_lseek final
+    {
+    public:
+        static auto pre(const std::string& _instance_name,
+                        const instance_configuration_map& _instance_configs,
+                        std::list<boost::any>& _rule_arguments,
+                        irods::callback& _effect_handler) -> irods::error;
+
+        static auto post(const std::string& _instance_name,
+                         const instance_configuration_map& _instance_configs,
+                         std::list<boost::any>& _rule_arguments,
+                         irods::callback& _effect_handler) -> irods::error;
+
+    private:
+        inline static file_position_type fpos_ = 0;
+    }; // class pep_api_data_obj_lseek
+
     class pep_api_data_obj_write final
     {
     public:
@@ -174,7 +203,13 @@ namespace irods::handler
                          irods::callback& _effect_handler) -> irods::error;
 
     private:
+        inline static file_position_type fpos_ = 0; 
     }; // class pep_api_data_obj_write
+
+    auto pep_api_data_obj_close_post(const std::string& _instance_name,
+                                     const instance_configuration_map& _instance_configs,
+                                     std::list<boost::any>& _rule_arguments,
+                                     irods::callback& _effect_handler) -> irods::error;
 
     auto pep_api_mod_avu_metadata_pre(const std::string& _instance_name,
                                       const instance_configuration_map& _instance_configs,
