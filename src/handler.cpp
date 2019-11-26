@@ -3,9 +3,14 @@
 #include "logical_quotas_error.hpp"
 #include "switch_user_error.hpp"
 
+#include <sys/types.h>
+#include <unistd.h>
+
 #include <irods/irods_query.hpp>
 #include <irods/irods_logger.hpp>
 #include <irods/filesystem.hpp>
+#include <irods/dstream.hpp>
+#include <irods/transport/default_transport.hpp>
 #include <irods/irods_at_scope_exit.hpp>
 #include <irods/irods_get_l1desc.hpp>
 #include <irods/modAVUMetadata.h>
@@ -24,11 +29,12 @@
 namespace
 {
     // clang-format off
-    namespace fs           = irods::experimental::filesystem;
+    namespace fs                 = irods::experimental::filesystem;
 
-    using log              = irods::experimental::log;
-    using size_type        = irods::handler::size_type;
-    using quotas_info_type = std::unordered_map<std::string, size_type>;
+    using log                    = irods::experimental::log;
+    using size_type              = irods::handler::size_type;
+    using quotas_info_type       = std::unordered_map<std::string, size_type>;
+    using file_position_map_type = std::unordered_map<std::string, irods::handler::file_position_type>;
     // clang-format on
 
     //
@@ -59,6 +65,12 @@ namespace
     private:
         const fs::path& p_;
     }; // class parent_path
+
+    // 
+    // Globals
+    //
+    
+    file_position_map_type fpos_map;
 
     //
     // Function Prototypes
@@ -123,6 +135,10 @@ namespace
 
     template <typename Value, typename Map>
     auto get_attribute_value(const Map& _map, std::string_view _key) -> Value;
+
+    auto make_unique_id(fs::path _p) -> std::string;
+
+    auto size_on_disk(rsComm_t& _conn, fs::path _p) -> size_type;
 
     //
     // Function Implementations
@@ -306,8 +322,7 @@ namespace
                              irods::callback& _effect_handler,
                              std::function<std::vector<const std::string*> (const irods::attributes& _attrs)> _func) -> irods::error
     {
-        try
-        {
+        try {
             auto args_iter = std::begin(_rule_arguments);
             const auto path = boost::any_cast<std::string>(*args_iter);
 
@@ -331,8 +346,7 @@ namespace
                 }
             });
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -396,6 +410,30 @@ namespace
 
         throw std::runtime_error{fmt::format("Logical Quotas Policy: Failed to find policy metadata [{}]", _key)};
     }
+
+    auto make_unique_id(fs::path _p) -> std::string
+    {
+        std::string id = "irods_logical_quotas-";
+        id += std::to_string(std::hash<std::string>{}(_p.c_str()));
+        id += "-";
+        id += std::to_string(getpid());
+
+        return id;
+    }
+
+    auto size_on_disk(rsComm_t& _conn, fs::path _p) -> size_type
+    {
+        namespace io = irods::experimental::io;
+
+        io::server::default_transport tp{_conn};
+        io::idstream in{tp, _p, std::ios_base::ate};
+
+        if (!in) {
+            throw std::runtime_error{"Logical Quotas Policy: Could not open data object"};
+        }
+
+        return in.tellg();
+    }
 } // anonymous namespace
 
 namespace irods::handler
@@ -423,8 +461,7 @@ namespace irods::handler
                                                            std::list<boost::any>& _rule_arguments,
                                                            irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto args_iter = std::begin(_rule_arguments);
             const auto path = boost::any_cast<std::string>(*args_iter);
 
@@ -447,8 +484,7 @@ namespace irods::handler
                 fs::server::set_metadata(*rei.rsComm, path, {attrs.total_number_of_data_objects(),  objects.empty() ? "0" : objects});
             });
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -461,8 +497,7 @@ namespace irods::handler
                                                   std::list<boost::any>& _rule_arguments,
                                                   irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto args_iter = std::begin(_rule_arguments);
             const auto path = boost::any_cast<std::string>(*args_iter);
 
@@ -485,8 +520,7 @@ namespace irods::handler
                 fs::server::set_metadata(*rei.rsComm, path, {attrs.total_size_in_bytes(), bytes.empty() ? "0" : bytes});
             });
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -516,8 +550,7 @@ namespace irods::handler
                                                            std::list<boost::any>& _rule_arguments,
                                                            irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto args_iter = std::begin(_rule_arguments);
             const auto path = boost::any_cast<std::string>(*args_iter);
 
@@ -534,8 +567,7 @@ namespace irods::handler
                 fs::server::set_metadata(*rei.rsComm, path, {attrs.maximum_number_of_data_objects(), max_objects});
             });
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -548,8 +580,7 @@ namespace irods::handler
                                                   std::list<boost::any>& _rule_arguments,
                                                   irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto args_iter = std::begin(_rule_arguments);
             const auto path = boost::any_cast<std::string>(*args_iter);
 
@@ -566,8 +597,7 @@ namespace irods::handler
                 fs::server::set_metadata(*rei.rsComm, path, {attrs.maximum_size_in_bytes(), max_bytes});
             });
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -615,40 +645,39 @@ namespace irods::handler
         });
     }
 
-    auto pep_api_data_obj_copy_pre(const std::string& _instance_name,
-                                   const instance_configuration_map& _instance_configs,
-                                   std::list<boost::any>& _rule_arguments,
-                                   irods::callback& _effect_handler) -> irods::error
+    auto pep_api_data_obj_copy::pre(const std::string& _instance_name,
+                                    const instance_configuration_map& _instance_configs,
+                                    std::list<boost::any>& _rule_arguments,
+                                    irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             const auto& instance_config = _instance_configs.at(_instance_name);
             auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = instance_config.attributes();
 
+            if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
+                data_objects_ = 1;
+                size_in_bytes_ = fs::server::data_object_size(conn, input->srcDataObjInp.objPath);
+            }
+            else if (fs::server::is_collection(status)) {
+                std::tie(data_objects_, size_in_bytes_) = compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
+            }
+            else {
+                throw logical_quotas_error{"Logical Quotas Policy: Invalid object type", SYS_INTERNAL_ERR};
+            }
+
             for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs, input](auto& _collection, const auto& _info) {
-                if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
-                    throw_if_maximum_number_of_data_objects_violation(attrs, _info, 1);
-                    throw_if_maximum_size_in_bytes_violation(attrs, _info, fs::server::data_object_size(conn, input->srcDataObjInp.objPath));
-                }
-                else if (fs::server::is_collection(status)) {
-                    const auto [objects, bytes] = compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
-                    throw_if_maximum_number_of_data_objects_violation(attrs, _info, objects);
-                    throw_if_maximum_size_in_bytes_violation(attrs, _info, bytes);
-                }
-                else {
-                    throw logical_quotas_error{"Logical Quotas Policy: Invalid object type", SYS_INTERNAL_ERR};
-                }
+                throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
+                throw_if_maximum_size_in_bytes_violation(attrs, _info, size_in_bytes_);
             });
         }
         catch (const logical_quotas_error& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -656,33 +685,22 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
-    auto pep_api_data_obj_copy_post(const std::string& _instance_name,
-                                    const instance_configuration_map& _instance_configs,
-                                    std::list<boost::any>& _rule_arguments,
-                                    irods::callback& _effect_handler) -> irods::error
+    auto pep_api_data_obj_copy::post(const std::string& _instance_name,
+                                     const instance_configuration_map& _instance_configs,
+                                     std::list<boost::any>& _rule_arguments,
+                                     irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
             const auto& attrs = _instance_configs.at(_instance_name).attributes();
 
             for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
-                if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
-                    update_data_object_count_and_size(conn, attrs, _collection, _info, 1, fs::server::data_object_size(conn, input->srcDataObjInp.objPath));
-                }
-                else if (fs::server::is_collection(status)) {
-                    const auto [objects, bytes] = compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
-                    update_data_object_count_and_size(conn, attrs, _collection, _info, objects, bytes);
-                }
-                else {
-                    throw logical_quotas_error{"Logical Quotas Policy: Invalid object type", SYS_INTERNAL_ERR};
-                }
+                update_data_object_count_and_size(conn, attrs, _collection, _info, data_objects_, size_in_bytes_);
             });
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -723,8 +741,7 @@ namespace irods::handler
                                       std::list<boost::any>& _rule_arguments,
                                       irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
@@ -734,67 +751,7 @@ namespace irods::handler
                 update_data_object_count_and_size(conn, attrs, _collection, _info, 1, 0);
             });
         }
-        catch (const std::exception& e)
-        {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(RE_RUNTIME_ERROR, e.what());
-        }
-
-        return CODE(RULE_ENGINE_CONTINUE);
-    }
-
-    auto pep_api_data_obj_open::pre(const std::string& _instance_name,
-                                    const instance_configuration_map& _instance_configs,
-                                    std::list<boost::any>& _rule_arguments,
-                                    irods::callback& _effect_handler) -> irods::error
-    {
-        try {
-            auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
-            auto& rei = get_rei(_effect_handler);
-            auto& conn = *rei.rsComm;
-            const auto& instance_config = _instance_configs.at(_instance_name);
-            const auto& attrs = instance_config.attributes();
-
-            if (!fs::server::exists(*rei.rsComm, input->objPath)) {
-                increment_object_count_ = true;
-
-                for_each_monitored_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
-                    throw_if_maximum_number_of_data_objects_violation(attrs, _info, 1);
-                });
-            }
-        }
-        catch (const logical_quotas_error& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
-        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(RE_RUNTIME_ERROR, e.what());
-        }
-
-        return CODE(RULE_ENGINE_CONTINUE);
-    }
-
-    auto pep_api_data_obj_open::post(const std::string& _instance_name,
-                                     const instance_configuration_map& _instance_configs,
-                                     std::list<boost::any>& _rule_arguments,
-                                     irods::callback& _effect_handler) -> irods::error
-    {
-        try
-        {
-            auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
-            auto& rei = get_rei(_effect_handler);
-            auto& conn = *rei.rsComm;
-            const auto& attrs = _instance_configs.at(_instance_name).attributes();
-
-            if (increment_object_count_) {
-                for_each_monitored_collection(conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
-                    update_data_object_count_and_size(conn, attrs, _collection, _info, 1, 0);
-                });
-            }
-        }
-        catch (const std::exception& e)
-        {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -847,8 +804,7 @@ namespace irods::handler
                                     std::list<boost::any>& _rule_arguments,
                                     irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
@@ -865,8 +821,7 @@ namespace irods::handler
                 });
             }
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -879,8 +834,7 @@ namespace irods::handler
                                       std::list<boost::any>& _rule_arguments,
                                       irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             const auto& instance_config = _instance_configs.at(_instance_name);
             auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
@@ -950,8 +904,7 @@ namespace irods::handler
             log_exception_message(e.what(), _effect_handler);
             return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -964,8 +917,7 @@ namespace irods::handler
                                        std::list<boost::any>& _rule_arguments,
                                        irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
@@ -1041,8 +993,7 @@ namespace irods::handler
             log_exception_message(e.what(), _effect_handler);
             return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -1055,8 +1006,7 @@ namespace irods::handler
                                       std::list<boost::any>& _rule_arguments,
                                       irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
@@ -1066,8 +1016,7 @@ namespace irods::handler
                 size_in_bytes_ = fs::server::data_object_size(conn, input->objPath);
             }
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -1080,8 +1029,7 @@ namespace irods::handler
                                        std::list<boost::any>& _rule_arguments,
                                        irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
@@ -1091,8 +1039,167 @@ namespace irods::handler
                 update_data_object_count_and_size(conn, attrs, _collection, _info, -1, -size_in_bytes_);
             });
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return CODE(RULE_ENGINE_CONTINUE);
+    }
+
+    auto pep_api_data_obj_open::pre(const std::string& _instance_name,
+                                    const instance_configuration_map& _instance_configs,
+                                    std::list<boost::any>& _rule_arguments,
+                                    irods::callback& _effect_handler) -> irods::error
+    {
+        try {
+            auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
+            auto& rei = get_rei(_effect_handler);
+            auto& conn = *rei.rsComm;
+            const auto& instance_config = _instance_configs.at(_instance_name);
+            const auto& attrs = instance_config.attributes();
+
+            if (!fs::server::exists(*rei.rsComm, input->objPath)) {
+                data_objects_ = 1;
+                size_in_bytes_ = 0;
+
+                for_each_monitored_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
+                    throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
+                });
+            }
+            // If the data object exists and the truncate flag is set,
+            // then capture the size of the data object. This will be used to update
+            // the metadata and reflect that the data object has been truncated.
+            else if (O_TRUNC == (input->openFlags & O_TRUNC)) {
+                data_objects_ = 0;
+                size_in_bytes_ = static_cast<size_type>(fs::server::data_object_size(conn, input->objPath));
+            }
+        }
+        catch (const logical_quotas_error& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
+        }
+        catch (const std::exception& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return CODE(RULE_ENGINE_CONTINUE);
+    }
+
+    auto pep_api_data_obj_open::post(const std::string& _instance_name,
+                                     const instance_configuration_map& _instance_configs,
+                                     std::list<boost::any>& _rule_arguments,
+                                     irods::callback& _effect_handler) -> irods::error
+    {
+        try {
+            auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
+            auto& rei = get_rei(_effect_handler);
+            auto& conn = *rei.rsComm;
+            const auto& attrs = _instance_configs.at(_instance_name).attributes();
+
+            if (data_objects_ > 0 || size_in_bytes_ > 0) {
+                for_each_monitored_collection(conn, attrs, input->objPath, [&conn, &attrs](const auto& _collection, const auto& _info) {
+                    update_data_object_count_and_size(conn, attrs, _collection, _info, data_objects_, -size_in_bytes_);
+                });
+            }
+
+            // Assumptions:
+            // - All stream operations are isolated from one another due to each stream using a separate connection.
+            // - No two streams will ever use the same connection to write to the same data object.
+            // - The logical path is enough to uniquely identify a data object.
+            // - Multi-process/server is out of scope of this implementation.
+
+            file_position_type fpos = 0; // Handles O_TRUNC case.
+
+            // If the client requested append and NOT truncate, then set the size
+            // equal to the size of the data object.
+            if (O_APPEND == (input->openFlags & (O_APPEND | O_TRUNC))) {
+                fpos = fs::server::data_object_size(conn, input->objPath);
+            }
+
+            fpos_map.insert_or_assign(make_unique_id(input->objPath), fpos);
+        }
+        catch (const std::exception& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return CODE(RULE_ENGINE_CONTINUE);
+    }
+
+    auto pep_api_data_obj_lseek::pre(const std::string& _instance_name,
+                                     const instance_configuration_map& _instance_configs,
+                                     std::list<boost::any>& _rule_arguments,
+                                     irods::callback& _effect_handler) -> irods::error
+    {
+        try {
+            auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
+            auto& rei = get_rei(_effect_handler);
+            auto& conn = *rei.rsComm;
+            const auto& instance_config = _instance_configs.at(_instance_name);
+            const auto& attrs = instance_config.attributes();
+            const auto& l1desc = irods::get_l1desc(input->l1descInx); 
+
+            // TODO Does opening a data object with the O_TRUNC flag cause an update to the catalog?
+            // This is important because for lseek, we need the real size of the data object. In this case,
+            // zero should be returned.
+            //
+            // TODO Updating the catalog to reflect O_TRUNC is mandatory and should happen in 4.2.8.
+            // 
+            // For now, we can use dstream::seekg/tellg to retreive the real size of the data object
+            // as it is being written to.
+            const auto size = size_on_disk(conn, l1desc.dataObjInfo->objPath);
+
+            if (O_APPEND == (l1desc.dataObjInp->openFlags & O_APPEND)) {
+                fpos_ = size;
+            }
+            else {
+                switch (input->whence) {
+                    case SEEK_SET: fpos_  = input->offset; break;
+                    case SEEK_CUR: fpos_ += input->offset; break;
+                    case SEEK_END: fpos_  = (size + input->offset); break; // FIXME This could overflow!
+                    //case SEEK_HOLE: break;
+                    //case SEEK_DATA: break;
+                    default: break;
+                }
+            }
+
+            if (fpos_ < 0) {
+                throw std::runtime_error{"Logical Quotas Policy: File seek position cannot be less than zero"};
+            }
+
+            const std::int64_t size_diff = fpos_ - size;
+
+            // TODO Should probably do the following only if adding NEW bytes would exceed the limit.
+            // Clients are allowed to write to previously allocated space.
+            for_each_monitored_collection(conn, attrs, l1desc.dataObjInfo->objPath, [&attrs, size_diff](auto&, auto& _info) {
+                throw_if_maximum_size_in_bytes_violation(attrs, _info, size_diff);
+            });
+        }
+        catch (const logical_quotas_error& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
+        }
+        catch (const std::exception& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return CODE(RULE_ENGINE_CONTINUE);
+    }
+
+    auto pep_api_data_obj_lseek::post(const std::string& _instance_name,
+                                      const instance_configuration_map& _instance_configs,
+                                      std::list<boost::any>& _rule_arguments,
+                                      irods::callback& _effect_handler) -> irods::error
+    {
+        try {
+            auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
+            const auto& l1desc = irods::get_l1desc(input->l1descInx); 
+            fpos_map.at(make_unique_id(l1desc.dataObjInfo->objPath)) = fpos_;
+        }
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -1105,22 +1212,24 @@ namespace irods::handler
                                      std::list<boost::any>& _rule_arguments,
                                      irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
-            const auto& instance_config = _instance_configs.at(_instance_name);
+        try {
             auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
             auto* bbuf = get_pointer<bytesBuf_t>(_rule_arguments, 3);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
+            const auto& instance_config = _instance_configs.at(_instance_name);
             const auto& attrs = instance_config.attributes();
-            const auto* path = irods::get_l1desc(input->l1descInx).dataObjInfo->objPath; 
+            const auto& l1desc = irods::get_l1desc(input->l1descInx);
+            const auto* path = l1desc.dataObjInfo->objPath; 
 
-            for_each_monitored_collection(conn, attrs, path, [&conn, &attrs, bbuf](const auto&, const auto& _info) {
-                throw_if_maximum_size_in_bytes_violation(attrs, _info, bbuf->len);
-            });
+            // Only check for violations if new bytes are written.
+            if (bbuf->len > 0) {
+                for_each_monitored_collection(conn, attrs, path, [&attrs, bbuf](auto&, const auto& _info) {
+                    throw_if_maximum_size_in_bytes_violation(attrs, _info, bbuf->len);
+                });
+            }
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -1133,21 +1242,44 @@ namespace irods::handler
                                       std::list<boost::any>& _rule_arguments,
                                       irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
+            auto* bbuf = get_pointer<bytesBuf_t>(_rule_arguments, 3);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& attrs = _instance_configs.at(_instance_name).attributes();
+            const auto& instance_config = _instance_configs.at(_instance_name);
+            const auto& attrs = instance_config.attributes();
             const auto& l1desc = irods::get_l1desc(input->l1descInx);
             const auto* path = l1desc.dataObjInfo->objPath;
 
-            for_each_monitored_collection(conn, attrs, path, [&conn, &attrs, &l1desc](const auto& _collection, const auto& _info) {
-                update_data_object_count_and_size(conn, attrs, _collection, _info, 0, l1desc.bytesWritten);
-            });
+            fpos_map.at(make_unique_id(path)) += bbuf->len;
+
+            // Only update the totals if new bytes are written.
+            if (bbuf->len > 0) {
+                for_each_monitored_collection(conn, attrs, path, [&conn, &attrs, bbuf](const auto& _collection, const auto& _info) {
+                    update_data_object_count_and_size(conn, attrs, _collection, _info, 0, bbuf->len);
+                });
+            }
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return CODE(RULE_ENGINE_CONTINUE);
+    }
+
+    auto pep_api_data_obj_close_post(const std::string& _instance_name,
+                                     const instance_configuration_map& _instance_configs,
+                                     std::list<boost::any>& _rule_arguments,
+                                     irods::callback& _effect_handler) -> irods::error
+    {
+        try {
+            auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
+            const auto& l1desc = irods::get_l1desc(input->l1descInx);
+            fpos_map.erase(make_unique_id(l1desc.dataObjInfo->objPath));
+        }
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -1160,8 +1292,7 @@ namespace irods::handler
                                       std::list<boost::any>& _rule_arguments,
                                       irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto* input = get_pointer<modAVUMetadataInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
@@ -1188,8 +1319,7 @@ namespace irods::handler
                 }
             }
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -1202,8 +1332,7 @@ namespace irods::handler
                               std::list<boost::any>& _rule_arguments,
                               irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto* input = get_pointer<collInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
@@ -1213,8 +1342,7 @@ namespace irods::handler
                 std::tie(data_objects_, size_in_bytes_) = compute_data_object_count_and_size(conn, input->collName);
             }
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
@@ -1227,8 +1355,7 @@ namespace irods::handler
                                std::list<boost::any>& _rule_arguments,
                                irods::callback& _effect_handler) -> irods::error
     {
-        try
-        {
+        try {
             auto* input = get_pointer<collInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
@@ -1238,8 +1365,7 @@ namespace irods::handler
                 update_data_object_count_and_size(conn, attrs, _collection, _info, -data_objects_, -size_in_bytes_);
             });
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }

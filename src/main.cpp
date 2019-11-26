@@ -50,12 +50,15 @@ namespace
     };
 
     const handler_map_type pep_handlers{
-        {"pep_api_data_obj_copy_post",            handler::pep_api_data_obj_copy_post},
-        {"pep_api_data_obj_copy_pre",             handler::pep_api_data_obj_copy_pre},
+        {"pep_api_data_obj_close_post",           handler::pep_api_data_obj_close_post},
+        {"pep_api_data_obj_copy_post",            handler::pep_api_data_obj_copy::post},
+        {"pep_api_data_obj_copy_pre",             handler::pep_api_data_obj_copy::pre},
         {"pep_api_data_obj_create_and_stat_post", handler::pep_api_data_obj_create_post},
         {"pep_api_data_obj_create_and_stat_pre",  handler::pep_api_data_obj_create_pre},
         {"pep_api_data_obj_create_post",          handler::pep_api_data_obj_create_post},
         {"pep_api_data_obj_create_pre",           handler::pep_api_data_obj_create_pre},
+        {"pep_api_data_obj_lseek_post",           handler::pep_api_data_obj_lseek::post},
+        {"pep_api_data_obj_lseek_pre",            handler::pep_api_data_obj_lseek::pre},
         {"pep_api_data_obj_open_and_stat_post",   handler::pep_api_data_obj_open::post},
         {"pep_api_data_obj_open_and_stat_pre",    handler::pep_api_data_obj_open::pre},
         {"pep_api_data_obj_open_post",            handler::pep_api_data_obj_open::post},
