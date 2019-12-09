@@ -321,15 +321,13 @@ namespace
 
             switch_user(rei, *username, [&] {
                 const auto& attrs = _instance_configs.at(_instance_name).attributes();
-
-                if (!is_monitored_collection(conn, attrs, path)) {
-                    throw std::runtime_error{fmt::format("Logical Quotas Policy: [{}] is not a monitored collection", path)};
-                }
-
                 const auto info = get_monitored_collection_info(conn, attrs, path);
 
                 for (auto&& attribute_name : _func(attrs)) {
-                    fs::server::remove_metadata(conn, path, {*attribute_name,  std::to_string(get_attribute<size_type>(info, *attribute_name))});
+                    if (const auto iter = info.find(*attribute_name); iter != std::end(info)) {
+                        const auto value = get_attribute_value<size_type>(info, *attribute_name);
+                        fs::server::remove_metadata(conn, path, {*attribute_name,  std::to_string(value)});
+                    }
                 }
             });
         }
