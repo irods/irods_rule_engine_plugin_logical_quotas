@@ -101,7 +101,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             #
             # TEST 5: Remove a data object from "other_child_coll".
             #
-            self.admin.assert_icommand(['irm', os.path.join(other_child_coll, os.path.basename(other_data_object))])
+            self.admin.assert_icommand(['irm', '-f', os.path.join(other_child_coll, os.path.basename(other_data_object))])
 
             # Check quotas. The quotas for the "child_coll" should not have been modified.
             root_expected_number_of_objects -= 1
@@ -112,7 +112,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             #
             # TEST 6: Recursively remove "other_child_coll".
             #
-            self.admin.assert_icommand(['irm', '-r', other_child_coll])
+            self.admin.assert_icommand(['irm', '-rf', other_child_coll])
 
             # Check quotas. The quotas for the "child_coll" should not have been modified.
             root_expected_number_of_objects -= 1
@@ -121,6 +121,33 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             self.assert_quotas(child_coll, child_expected_number_of_objects, child_expected_size_in_bytes)
 
         self.run_test(do_test)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_unset_maximum_quotas_when_not_tracking__issue_5(self):
+        config = IrodsConfig()
+        col = self.admin.session_collection
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+            self.logical_quotas_start_monitoring_collection(col)
+            self.admin.assert_icommand(['imeta', 'ls', '-C', col], 'STDOUT', [self.total_number_of_data_objects_attribute(),
+                                                                              self.total_size_in_bytes_attribute()])
+
+            self.logical_quotas_set_maximum_number_of_data_objects(col, 100)
+            self.logical_quotas_set_maximum_size_in_bytes(col, 10000)
+            self.admin.assert_icommand(['imeta', 'ls', '-C', col], 'STDOUT', [self.total_number_of_data_objects_attribute(),
+                                                                              self.total_size_in_bytes_attribute(),
+                                                                              self.maximum_number_of_data_objects_attribute(),
+                                                                              self.maximum_size_in_bytes_attribute()])
+
+            self.logical_quotas_stop_monitoring_collection(col)
+            self.admin.assert_icommand(['imeta', 'ls', '-C', col], 'STDOUT', [self.maximum_number_of_data_objects_attribute(),
+                                                                              self.maximum_size_in_bytes_attribute()])
+
+            self.logical_quotas_unset_maximum_number_of_data_objects(col)
+            self.logical_quotas_unset_maximum_size_in_bytes(col)
+            self.admin.assert_icommand(['imeta', 'ls', '-C', col], 'STDOUT', ['None'])
 
     #
     # Utility Functions
@@ -290,6 +317,32 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
     def logical_quotas_stop_monitoring_collection(self, collection):
         self.exec_logical_quotas_operation(json.dumps({
             'operation': 'logical_quotas_stop_monitoring_collection',
+            'collection': collection
+        }))
+
+    def logical_quotas_set_maximum_number_of_data_objects(self, collection, max_number_of_data_objects):
+        self.exec_logical_quotas_operation(json.dumps({
+            'operation': 'logical_quotas_set_maximum_number_of_data_objects',
+            'collection': collection,
+            'value': max_number_of_data_objects
+        }))
+
+    def logical_quotas_unset_maximum_number_of_data_objects(self, collection):
+        self.exec_logical_quotas_operation(json.dumps({
+            'operation': 'logical_quotas_unset_maximum_number_of_data_objects',
+            'collection': collection
+        }))
+
+    def logical_quotas_set_maximum_size_in_bytes(self, collection, max_size_in_bytes):
+        self.exec_logical_quotas_operation(json.dumps({
+            'operation': 'logical_quotas_set_maximum_size_in_bytes',
+            'collection': collection,
+            'value': max_size_in_bytes
+        }))
+
+    def logical_quotas_unset_maximum_size_in_bytes(self, collection):
+        self.exec_logical_quotas_operation(json.dumps({
+            'operation': 'logical_quotas_unset_maximum_size_in_bytes',
             'collection': collection
         }))
 
