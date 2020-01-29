@@ -1287,46 +1287,6 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
-    auto pep_api_mod_avu_metadata_pre(const std::string& _instance_name,
-                                      const instance_configuration_map& _instance_configs,
-                                      std::list<boost::any>& _rule_arguments,
-                                      irods::callback& _effect_handler) -> irods::error
-    {
-        try {
-            auto* input = get_pointer<modAVUMetadataInp_t>(_rule_arguments);
-            auto& rei = get_rei(_effect_handler);
-            auto& conn = *rei.rsComm;
-            const auto& attrs = _instance_configs.at(_instance_name).attributes();
-
-            const auto is_rodsadmin = (conn.clientUser.authInfo.authFlag >= LOCAL_PRIV_USER_AUTH);
-            const auto is_modification = [input] {
-                const auto ops = {"set", "add", "adda", "mod", "rm", "rmw", "rmi"}; // TODO "add" and "adda" seem questionable.
-                return std::any_of(std::begin(ops), std::end(ops), [input](std::string_view _op) {
-                    return _op == input->arg0;
-                });
-            }();
-
-            if (!is_rodsadmin && is_modification) {
-                const auto keys = {
-                    attrs.maximum_number_of_data_objects(),
-                    attrs.maximum_size_in_bytes(),
-                    attrs.total_number_of_data_objects(),
-                    attrs.total_size_in_bytes()
-                };
-
-                if (std::any_of(std::begin(keys), std::end(keys), [input](const auto& _key) { return _key == input->arg3; })) {
-                    return ERROR(CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "Logical Quotas Policy: User not allowed to modify administrative metadata");
-                }
-            }
-        }
-        catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(RE_RUNTIME_ERROR, e.what());
-        }
-
-        return CODE(RULE_ENGINE_CONTINUE);
-    }
-
     auto pep_api_rm_coll::pre(const std::string& _instance_name,
                               const instance_configuration_map& _instance_configs,
                               std::list<boost::any>& _rule_arguments,
