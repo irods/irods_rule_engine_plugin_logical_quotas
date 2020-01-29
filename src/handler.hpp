@@ -211,11 +211,6 @@ namespace irods::handler
                                      std::list<boost::any>& _rule_arguments,
                                      irods::callback& _effect_handler) -> irods::error;
 
-    auto pep_api_mod_avu_metadata_pre(const std::string& _instance_name,
-                                      const instance_configuration_map& _instance_configs,
-                                      std::list<boost::any>& _rule_arguments,
-                                      irods::callback& _effect_handler) -> irods::error;
-
     class pep_api_rm_coll final
     {
     public:

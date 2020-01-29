@@ -71,7 +71,6 @@ namespace
         {"pep_api_data_obj_unlink_pre",           handler::pep_api_data_obj_unlink::pre},
         {"pep_api_data_obj_write_post",           handler::pep_api_data_obj_write::post},
         {"pep_api_data_obj_write_pre",            handler::pep_api_data_obj_write::pre},
-        {"pep_api_mod_avu_metadata_pre",          handler::pep_api_mod_avu_metadata_pre},
         {"pep_api_rm_coll_post",                  handler::pep_api_rm_coll::post},
         {"pep_api_rm_coll_pre",                   handler::pep_api_rm_coll::pre}
     };
