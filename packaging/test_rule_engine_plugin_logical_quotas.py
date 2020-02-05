@@ -30,7 +30,163 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
     # TODO Test object counters (put, copy, remove)
     # TODO Test size counters (put, copy, remove)
     # TODO Test streaming counters (open/create, write)
-    # TODO Test administrative metadata guard
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_incorrect_config(self):
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_set_maximum_avus_without_monitoring_avus(self):
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_set_monitoring_avus_without_maximum_avus(self):
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_create_data_object(self):
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_put_data_object(self):
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+            # For each test, the following behavior must be checked:
+            # - The totals are updated appropriately (object count and bytes)
+            # - The quotas are enforced appropriately (object count and bytes)
+
+            sandbox = self.admin.session_collection
+
+            self.logical_quotas_start_monitoring_collection(sandbox)
+            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, 2)
+            self.logical_quotas_set_maximum_size_in_bytes(sandbox, 15)
+
+            # Put a data object. This should not exceed any quotas.
+            file_size = 4
+            self.put_new_data_object('f1.txt', file_size)
+            expected_number_of_objects = 1
+            expected_size_in_bytes = file_size
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+
+            # Exceeds max number of bytes quota.
+            file_size = 100
+            self.put_new_data_object_exceeds_quota('not_gonna_work.buddy', file_size)
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+
+            # Put another data object. This should not exceed any quotas.
+            file_size = 6
+            self.put_new_data_object('f2.txt', file_size)
+            expected_number_of_objects += 1
+            expected_size_in_bytes += file_size
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+
+            # Exceeds max number of data objects quota.
+            file_size = 5
+            self.put_new_data_object_exceeds_quota('not_gonna_work.buddy', file_size)
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+
+            # Remove the data objects.
+            self.admin.assert_icommand(['irm', '-f', 'f1.txt'])
+            self.admin.assert_icommand(['irm', '-f', 'f2.txt'])
+            expected_number_of_objects = 0
+            expected_size_in_bytes = 0
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+
+            self.logical_quotas_stop_monitoring_collection(sandbox)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_put_collection(self):
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+            sandbox = self.admin.session_collection
+            self.logical_quotas_start_monitoring_collection(sandbox)
+            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, 1)
+
+            dir_path = os.path.join(self.admin.local_session_dir, 'coll.d')
+            dir_name = os.path.basename(dir_path)
+            file_size = 20
+            self.make_directory(dir_path, ['f1.txt', 'f2.txt', 'f3.txt'], file_size)
+            self.admin.assert_icommand_fail(['iput', '-r', dir_path])
+            expected_number_of_objects = 1
+            expected_size_in_bytes = 20
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+
+            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, 100)
+            self.logical_quotas_set_maximum_size_in_bytes(sandbox, 1)
+            self.admin.assert_icommand_fail(['iput', '-rf', dir_path])
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+
+            self.logical_quotas_set_maximum_size_in_bytes(sandbox, 100)
+            self.admin.assert_icommand(['iput', '-rf', dir_path], 'STDOUT', ['pre-scan'])
+            self.admin.assert_icommand(['ils', '-l', dir_name], 'STDOUT', [dir_name])
+            expected_number_of_objects = 3
+            expected_size_in_bytes = 60
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+
+            # Remove the collection.
+            self.admin.assert_icommand(['irm', '-rf', dir_name])
+            expected_number_of_objects = 0
+            expected_size_in_bytes = 0
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+
+            for f in ['f1.txt', 'f2.txt', 'f3.txt']:
+                os.remove(os.path.join(dir_path, f))
+            os.removedirs(dir_path)
+
+            self.logical_quotas_stop_monitoring_collection(sandbox)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_copy_data_object(self):
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_copy_collection(self):
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_rename_data_object(self):
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_rename_collection(self):
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_stream_data_object(self):
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_basic_functionality(self):
@@ -152,6 +308,28 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
     #
     # Utility Functions
     #
+
+    def put_new_data_object(self, logical_path, size=0):
+        filename = os.path.join(self.admin.local_session_dir, os.path.basename(logical_path))
+        lib.make_file(filename, size, 'arbitrary')
+        self.admin.assert_icommand(['iput', filename, logical_path])
+        os.remove(filename)
+
+    def make_directory(self, dir_name, files, file_size):
+        os.makedirs(dir_name)
+        for f in files:
+            lib.make_file(os.path.join(dir_name, f), file_size, 'arbitrary')
+
+    def make_collection(self, coll_name, files, file_size):
+        self.admin.assert_icommand(['imkdir', coll_name])
+        for f in files:
+            self.put_new_data_object(os.path.join(coll_name, f), file_size)
+
+    def put_new_data_object_exceeds_quota(self, logical_path, size=0):
+        filename = os.path.basename(logical_path)
+        lib.make_file(filename, size, 'arbitrary')
+        self.admin.assert_icommand_fail(['iput', filename, logical_path])
+        os.remove(filename)
 
     def assert_quotas(self, coll, expected_number_of_objects, expected_size_in_bytes):
         values = self.get_logical_quotas_attribute_values(coll)

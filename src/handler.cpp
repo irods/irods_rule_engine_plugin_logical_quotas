@@ -645,6 +645,12 @@ namespace irods::handler
         });
     }
 
+    auto pep_api_data_obj_copy::reset() noexcept -> void
+    {
+        data_objects_ = 0;
+        size_in_bytes_ = 0;
+    }
+
     auto pep_api_data_obj_copy::pre(const std::string& _instance_name,
                                     const instance_configuration_map& _instance_configs,
                                     std::list<boost::any>& _rule_arguments,
@@ -759,11 +765,19 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
+    auto pep_api_data_obj_put::reset() noexcept -> void
+    {
+        size_diff_ = 0;
+        forced_overwrite_ = false;
+    }
+
     auto pep_api_data_obj_put::pre(const std::string& _instance_name,
                                    const instance_configuration_map& _instance_configs,
                                    std::list<boost::any>& _rule_arguments,
                                    irods::callback& _effect_handler) -> irods::error
     {
+        reset();
+
         try {
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
@@ -771,8 +785,7 @@ namespace irods::handler
             const auto& instance_config = _instance_configs.at(_instance_name);
             const auto& attrs = instance_config.attributes();
 
-            if (fs::server::exists(*rei.rsComm, input->objPath)) {
-                forced_overwrite_ = true;
+            if (forced_overwrite_ = fs::server::exists(*rei.rsComm, input->objPath); forced_overwrite_) {
                 const size_type existing_size = fs::server::data_object_size(conn, input->objPath);
                 size_diff_ = static_cast<size_type>(input->dataSize) - existing_size;
 
@@ -829,11 +842,19 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
+    auto pep_api_data_obj_rename::reset() noexcept -> void
+    {
+        data_objects_ = 0;
+        size_in_bytes_ = 0;
+    }
+
     auto pep_api_data_obj_rename::pre(const std::string& _instance_name,
                                       const instance_configuration_map& _instance_configs,
                                       std::list<boost::any>& _rule_arguments,
                                       irods::callback& _effect_handler) -> irods::error
     {
+        reset();
+
         try {
             const auto& instance_config = _instance_configs.at(_instance_name);
             auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
@@ -1001,11 +1022,18 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
+    auto pep_api_data_obj_unlink::reset() noexcept -> void
+    {
+        size_in_bytes_ = 0;
+    }
+
     auto pep_api_data_obj_unlink::pre(const std::string& _instance_name,
                                       const instance_configuration_map& _instance_configs,
                                       std::list<boost::any>& _rule_arguments,
                                       irods::callback& _effect_handler) -> irods::error
     {
+        reset();
+
         try {
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
@@ -1047,11 +1075,19 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
+    auto pep_api_data_obj_open::reset() noexcept -> void
+    {
+        data_objects_ = 0;
+        size_in_bytes_ = 0;
+    }
+
     auto pep_api_data_obj_open::pre(const std::string& _instance_name,
                                     const instance_configuration_map& _instance_configs,
                                     std::list<boost::any>& _rule_arguments,
                                     irods::callback& _effect_handler) -> irods::error
     {
+        reset();
+
         try {
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
@@ -1128,11 +1164,18 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
+    auto pep_api_data_obj_lseek::reset() noexcept -> void
+    {
+        fpos_ = 0;
+    }
+
     auto pep_api_data_obj_lseek::pre(const std::string& _instance_name,
                                      const instance_configuration_map& _instance_configs,
                                      std::list<boost::any>& _rule_arguments,
                                      irods::callback& _effect_handler) -> irods::error
     {
+        reset();
+
         try {
             auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
@@ -1207,11 +1250,18 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
+    auto pep_api_data_obj_write::reset() noexcept -> void
+    {
+        fpos_ = 0; 
+    }
+
     auto pep_api_data_obj_write::pre(const std::string& _instance_name,
                                      const instance_configuration_map& _instance_configs,
                                      std::list<boost::any>& _rule_arguments,
                                      irods::callback& _effect_handler) -> irods::error
     {
+        reset();
+
         try {
             auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
             auto* bbuf = get_pointer<bytesBuf_t>(_rule_arguments, 3);
@@ -1287,11 +1337,19 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
+    auto pep_api_rm_coll::reset() noexcept -> void
+    {
+        data_objects_ = 0;
+        size_in_bytes_ = 0;
+    }
+
     auto pep_api_rm_coll::pre(const std::string& _instance_name,
                               const instance_configuration_map& _instance_configs,
                               std::list<boost::any>& _rule_arguments,
                               irods::callback& _effect_handler) -> irods::error
     {
+        reset();
+
         try {
             auto* input = get_pointer<collInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);

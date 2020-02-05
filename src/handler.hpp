@@ -76,6 +76,8 @@ namespace irods::handler
     class pep_api_data_obj_copy final
     {
     public:
+        static auto reset() noexcept -> void;
+
         static auto pre(const std::string& _instance_name,
                         const instance_configuration_map& _instance_configs,
                         std::list<boost::any>& _rule_arguments,
@@ -104,6 +106,8 @@ namespace irods::handler
     class pep_api_data_obj_put final
     {
     public:
+        static auto reset() noexcept -> void;
+
         static auto pre(const std::string& _instance_name,
                         const instance_configuration_map& _instance_configs,
                         std::list<boost::any>& _rule_arguments,
@@ -122,6 +126,8 @@ namespace irods::handler
     class pep_api_data_obj_rename final
     {
     public:
+        static auto reset() noexcept -> void;
+
         static auto pre(const std::string& _instance_name,
                         const instance_configuration_map& _instance_configs,
                         std::list<boost::any>& _rule_arguments,
@@ -140,6 +146,8 @@ namespace irods::handler
     class pep_api_data_obj_unlink final
     {
     public:
+        static auto reset() noexcept -> void;
+
         static auto pre(const std::string& _instance_name,
                         const instance_configuration_map& _instance_configs,
                         std::list<boost::any>& _rule_arguments,
@@ -157,6 +165,8 @@ namespace irods::handler
     class pep_api_data_obj_open final
     {
     public:
+        static auto reset() noexcept -> void;
+
         static auto pre(const std::string& _instance_name,
                         const instance_configuration_map& _instance_configs,
                         std::list<boost::any>& _rule_arguments,
@@ -175,6 +185,8 @@ namespace irods::handler
     class pep_api_data_obj_lseek final
     {
     public:
+        static auto reset() noexcept -> void;
+
         static auto pre(const std::string& _instance_name,
                         const instance_configuration_map& _instance_configs,
                         std::list<boost::any>& _rule_arguments,
@@ -192,6 +204,8 @@ namespace irods::handler
     class pep_api_data_obj_write final
     {
     public:
+        static auto reset() noexcept -> void;
+
         static auto pre(const std::string& _instance_name,
                         const instance_configuration_map& _instance_configs,
                         std::list<boost::any>& _rule_arguments,
@@ -214,6 +228,8 @@ namespace irods::handler
     class pep_api_rm_coll final
     {
     public:
+        static auto reset() noexcept -> void;
+
         static auto pre(const std::string& _instance_name,
                         const instance_configuration_map& _instance_configs,
                         std::list<boost::any>& _rule_arguments,
