@@ -50,7 +50,8 @@ namespace
     };
 
     const handler_map_type pep_handlers{
-        {"pep_api_data_obj_close_post",           handler::pep_api_data_obj_close_post},
+        {"pep_api_data_obj_close_post",           handler::pep_api_data_obj_close::post},
+        {"pep_api_data_obj_close_pre",            handler::pep_api_data_obj_close::pre},
         {"pep_api_data_obj_copy_post",            handler::pep_api_data_obj_copy::post},
         {"pep_api_data_obj_copy_pre",             handler::pep_api_data_obj_copy::pre},
         {"pep_api_data_obj_create_and_stat_post", handler::pep_api_data_obj_create_post},

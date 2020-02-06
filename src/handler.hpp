@@ -76,6 +76,8 @@ namespace irods::handler
     class pep_api_data_obj_copy final
     {
     public:
+        pep_api_data_obj_copy() = delete;
+
         static auto reset() noexcept -> void;
 
         static auto pre(const std::string& _instance_name,
@@ -106,6 +108,8 @@ namespace irods::handler
     class pep_api_data_obj_put final
     {
     public:
+        pep_api_data_obj_put() = delete;
+
         static auto reset() noexcept -> void;
 
         static auto pre(const std::string& _instance_name,
@@ -126,6 +130,8 @@ namespace irods::handler
     class pep_api_data_obj_rename final
     {
     public:
+        pep_api_data_obj_rename() = delete;
+
         static auto reset() noexcept -> void;
 
         static auto pre(const std::string& _instance_name,
@@ -146,6 +152,8 @@ namespace irods::handler
     class pep_api_data_obj_unlink final
     {
     public:
+        pep_api_data_obj_unlink() = delete;
+
         static auto reset() noexcept -> void;
 
         static auto pre(const std::string& _instance_name,
@@ -165,6 +173,8 @@ namespace irods::handler
     class pep_api_data_obj_open final
     {
     public:
+        pep_api_data_obj_open() = delete;
+
         static auto reset() noexcept -> void;
 
         static auto pre(const std::string& _instance_name,
@@ -185,6 +195,8 @@ namespace irods::handler
     class pep_api_data_obj_lseek final
     {
     public:
+        pep_api_data_obj_lseek() = delete;
+
         static auto reset() noexcept -> void;
 
         static auto pre(const std::string& _instance_name,
@@ -204,6 +216,8 @@ namespace irods::handler
     class pep_api_data_obj_write final
     {
     public:
+        pep_api_data_obj_write() = delete;
+
         static auto reset() noexcept -> void;
 
         static auto pre(const std::string& _instance_name,
@@ -220,14 +234,31 @@ namespace irods::handler
         inline static file_position_type fpos_ = 0; 
     }; // class pep_api_data_obj_write
 
-    auto pep_api_data_obj_close_post(const std::string& _instance_name,
-                                     const instance_configuration_map& _instance_configs,
-                                     std::list<boost::any>& _rule_arguments,
-                                     irods::callback& _effect_handler) -> irods::error;
+    class pep_api_data_obj_close final
+    {
+    public:
+        pep_api_data_obj_close() = delete;
+
+        static auto reset() noexcept -> void;
+
+        static auto pre(const std::string& _instance_name,
+                        const instance_configuration_map& _instance_configs,
+                        std::list<boost::any>& _rule_arguments,
+                        irods::callback& _effect_handler) -> irods::error;
+
+        static auto post(const std::string& _instance_name,
+                         const instance_configuration_map& _instance_configs,
+                         std::list<boost::any>& _rule_arguments,
+                         irods::callback& _effect_handler) -> irods::error;
+    private:
+        inline static std::string path_;
+    }; // class pep_api_data_obj_close
 
     class pep_api_rm_coll final
     {
     public:
+        pep_api_rm_coll() = delete;
+
         static auto reset() noexcept -> void;
 
         static auto pre(const std::string& _instance_name,
