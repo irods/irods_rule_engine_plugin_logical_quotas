@@ -4,6 +4,8 @@ import os
 import sys
 import shutil
 import json
+import subprocess
+import tempfile
 
 if sys.version_info < (2, 7):
     import unittest2 as unittest
@@ -25,11 +27,12 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
     def tearDown(self):
         super(Test_Rule_Engine_Plugin_Logical_Quotas, self).tearDown()
 
-    # TODO Test incorrect REP config
-    # TODO Test setting only max avus without corresponding totals avus
-    # TODO Test object counters (put, copy, remove)
-    # TODO Test size counters (put, copy, remove)
-    # TODO Test streaming counters (open/create, write)
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_logical_quotas_commands(self):
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_incorrect_config(self):
@@ -69,6 +72,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             # For each test, the following behavior must be checked:
             # - The totals are updated appropriately (object count and bytes)
             # - The quotas are enforced appropriately (object count and bytes)
+            # - Consider nesting
 
             sandbox = self.admin.session_collection
 
@@ -124,19 +128,22 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             dir_name = os.path.basename(dir_path)
             file_size = 20
             self.make_directory(dir_path, ['f1.txt', 'f2.txt', 'f3.txt'], file_size)
+
+            # Test: Exceed the max number of data objects.
             self.admin.assert_icommand_fail(['iput', '-r', dir_path])
             expected_number_of_objects = 1
             expected_size_in_bytes = 20
             self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
 
+            # Test: Exceed the max number of bytes and show that the current totals are correct.
             self.logical_quotas_set_maximum_number_of_data_objects(sandbox, 100)
             self.logical_quotas_set_maximum_size_in_bytes(sandbox, 1)
             self.admin.assert_icommand_fail(['iput', '-rf', dir_path])
             self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
 
+            # Test: No quota violations on put of a non-empty collection.
             self.logical_quotas_set_maximum_size_in_bytes(sandbox, 100)
             self.admin.assert_icommand(['iput', '-rf', dir_path], 'STDOUT', ['pre-scan'])
-            self.admin.assert_icommand(['ils', '-l', dir_name], 'STDOUT', [dir_name])
             expected_number_of_objects = 3
             expected_size_in_bytes = 60
             self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
@@ -160,12 +167,20 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
 
+            # TODO copy data object into monitored collection
+            # TODO copy data object to sibling collection
+            # TODO copy data object to child collection
+
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_copy_collection(self):
 	config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
+
+            # TODO copy collection into monitored collection
+            # TODO copy collection to sibling collection
+            # TODO copy collection to child collection
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_rename_data_object(self):
@@ -174,6 +189,10 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
 
+            # TODO rename/move data object under same collection.
+            # TODO rename/move data object under child collection.
+            # TODO rename/move data object under sibling collection.
+
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_rename_collection(self):
 	config = IrodsConfig()
@@ -181,8 +200,96 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
 
+            # TODO rename/move collection under same collection.
+            # TODO rename/move collection under child collection.
+            # TODO rename/move collection under sibling collection.
+
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_stream_data_object(self):
+        def exec_pipe(src_cmd, dst_cmd):
+            p = subprocess.Popen(src_cmd, stdout=subprocess.PIPE)
+            q = subprocess.Popen(dst_cmd, stdin=p.stdout)
+            p.wait()
+
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+            sandbox = self.admin.session_collection
+
+            self.logical_quotas_start_monitoring_collection(sandbox)
+            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, 10)
+            self.logical_quotas_set_maximum_size_in_bytes(sandbox, 14)
+
+            # XXX printf 'hello world\n' | istream write -o 0 -c 5 --no-trunc /tempZone/home/rods/foo.txt
+            #data_object = os.path.join(self.admin.session_collection, 'foo.txt')
+            data_object = 'foo.txt'
+
+            exec_pipe(['printf', 'hello, world'], ['istream', 'write', data_object])
+            #self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, world!'])
+            exec_pipe(['printf', 'iRODS!'], ['istream', 'write', '-o', '7', '--no-trunc', data_object])
+            #self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, iRODS!'])
+
+            # Write to non-existent data object.
+            contents = 'hello, world!'
+            #temp_file = tempfile.SpooledTemporaryFile()
+            #temp_file.write(contents)
+            #temp_file.seek(0)
+            #self.admin.assert_icommand(['istream', 'write', data_object], stdin=temp_file)
+            #self.admin.assert_icommand(['istream', 'write', data_object], input=contents)
+
+            #p = subprocess.Popen(['printf', contents], stdout=subprocess.PIPE)
+            #self.admin.assert_icommand(['istream', 'write', data_object], stdin=p.stdout)
+            #p.wait()
+
+            #expected_number_of_objects = 1
+            #expected_size_in_bytes = len(contents) #+ 1 # Plus one is for null terminator.
+            #self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+            #self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, world!'])
+
+            # Write in memory used by existing data object.
+            # The current totals should not change.
+            #temp_file = tempfile.SpooledTemporaryFile()
+            #temp_file.write('iRODS!')
+            #temp_file.seek(0)
+            #self.admin.assert_icommand(['istream', 'write', '-o', '7', '--no-trunc', data_object], stdin=temp_file)
+            #self.admin.assert_icommand(['istream', 'write', '-o', '7', '--no-trunc', data_object], input='iRODS!')
+
+            #contents = 'iRODS!'
+            #p = subprocess.Popen(['printf', contents], stdout=subprocess.PIPE)
+            #self.admin.assert_icommand(['istream', 'write', '-o', '7', '--no-trunc', data_object], stdin=p.stdout)
+            #p.communicate()
+            #self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+            #self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, iRODS!'])
+
+            # TODO append to existing data object.
+
+            # TODO truncate/write to existing data object.
+
+            # TODO Trigger quota violation.
+            #temp_file = tempfile.SpooledTemporaryFile()
+            #temp_file.write(' This will trigger a quota violation.')
+            #temp_file.seek(0)
+            #contents = ' This will trigger a quota violation.'
+            #p = subprocess.Popen(['printf', contents], stdout=subprocess.PIPE)
+            #self.admin.assert_icommand_fail(['istream', 'write', '-a', 'f1.txt'], stdin=p.stdout)
+            #p.wait()
+            #self.admin.assert_icommand_fail(['istream', 'write', '-a', data_object], stdin=temp_file)
+            #self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+            #self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, iRODS!'])
+
+            self.logical_quotas_stop_monitoring_collection(sandbox)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_nested_monitored_collections(self):
+	config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_sibling_monitored_collections(self):
 	config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
@@ -429,7 +536,6 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
                 }
             }
         })
-
         lib.update_json_file_from_dict(config.server_config_path, config.server_config)
 
     def maximum_number_of_data_objects_attribute_name(self):

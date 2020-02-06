@@ -3,6 +3,7 @@
 #include "logical_quotas_error.hpp"
 #include "switch_user_error.hpp"
 
+#include <irods/objDesc.hpp>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -1319,15 +1320,38 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
-    auto pep_api_data_obj_close_post(const std::string& _instance_name,
+    auto pep_api_data_obj_close::reset() noexcept -> void
+    {
+        path_.clear();
+    }
+
+    auto pep_api_data_obj_close::pre(const std::string& _instance_name,
                                      const instance_configuration_map& _instance_configs,
                                      std::list<boost::any>& _rule_arguments,
                                      irods::callback& _effect_handler) -> irods::error
     {
+        reset();
+
         try {
             auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
             const auto& l1desc = irods::get_l1desc(input->l1descInx);
-            fpos_map.erase(make_unique_id(l1desc.dataObjInfo->objPath));
+            path_ = l1desc.dataObjInfo->objPath;
+        }
+        catch (const std::exception& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return CODE(RULE_ENGINE_CONTINUE);
+    }
+
+    auto pep_api_data_obj_close::post(const std::string& _instance_name,
+                                      const instance_configuration_map& _instance_configs,
+                                      std::list<boost::any>& _rule_arguments,
+                                      irods::callback& _effect_handler) -> irods::error
+    {
+        try {
+            fpos_map.erase(make_unique_id(path_));
         }
         catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
