@@ -206,11 +206,6 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_stream_data_object(self):
-        def exec_pipe(src_cmd, dst_cmd):
-            p = subprocess.Popen(src_cmd, stdout=subprocess.PIPE)
-            q = subprocess.Popen(dst_cmd, stdin=p.stdout)
-            p.wait()
-
 	config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
@@ -220,64 +215,43 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
             self.logical_quotas_start_monitoring_collection(sandbox)
             self.logical_quotas_set_maximum_number_of_data_objects(sandbox, 10)
-            self.logical_quotas_set_maximum_size_in_bytes(sandbox, 14)
+            self.logical_quotas_set_maximum_size_in_bytes(sandbox, len('hello, world!'))
 
-            # XXX printf 'hello world\n' | istream write -o 0 -c 5 --no-trunc /tempZone/home/rods/foo.txt
-            #data_object = os.path.join(self.admin.session_collection, 'foo.txt')
             data_object = 'foo.txt'
 
-            exec_pipe(['printf', 'hello, world'], ['istream', 'write', data_object])
-            #self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, world!'])
-            exec_pipe(['printf', 'iRODS!'], ['istream', 'write', '-o', '7', '--no-trunc', data_object])
-            #self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, iRODS!'])
-
-            # Write to non-existent data object.
+            # Create a new data object and write to it.
             contents = 'hello, world!'
-            #temp_file = tempfile.SpooledTemporaryFile()
-            #temp_file.write(contents)
-            #temp_file.seek(0)
-            #self.admin.assert_icommand(['istream', 'write', data_object], stdin=temp_file)
-            #self.admin.assert_icommand(['istream', 'write', data_object], input=contents)
-
-            #p = subprocess.Popen(['printf', contents], stdout=subprocess.PIPE)
-            #self.admin.assert_icommand(['istream', 'write', data_object], stdin=p.stdout)
-            #p.wait()
-
-            #expected_number_of_objects = 1
-            #expected_size_in_bytes = len(contents) #+ 1 # Plus one is for null terminator.
-            #self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
-            #self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, world!'])
+            self.admin.assert_icommand(['istream', 'write', data_object], input=contents)
+            self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', [contents])
+            expected_number_of_objects = 1
+            expected_size_in_bytes = len(contents)
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
 
             # Write in memory used by existing data object.
             # The current totals should not change.
-            #temp_file = tempfile.SpooledTemporaryFile()
-            #temp_file.write('iRODS!')
-            #temp_file.seek(0)
-            #self.admin.assert_icommand(['istream', 'write', '-o', '7', '--no-trunc', data_object], stdin=temp_file)
-            #self.admin.assert_icommand(['istream', 'write', '-o', '7', '--no-trunc', data_object], input='iRODS!')
+            self.admin.assert_icommand(['ils', '-l', data_object], 'STDOUT', [data_object])
+            self.admin.assert_icommand(['istream', 'write', '-o', '7', '--no-trunc', data_object], input='iRODS!')
+            self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, iRODS!'])
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
 
-            #contents = 'iRODS!'
-            #p = subprocess.Popen(['printf', contents], stdout=subprocess.PIPE)
-            #self.admin.assert_icommand(['istream', 'write', '-o', '7', '--no-trunc', data_object], stdin=p.stdout)
-            #p.communicate()
-            #self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
-            #self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, iRODS!'])
+            # Trigger quota violation.
+            self.admin.assert_icommand_fail(['istream', 'write', '-a', data_object], input='This will trigger a quota violation.')
+            self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, iRODS!'])
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
 
-            # TODO append to existing data object.
+            # Truncate and write to existing data object.
+            contents = 'truncated'
+            self.admin.assert_icommand(['istream', 'write', data_object], input=contents)
+            self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', [contents])
+            expected_size_in_bytes = len(contents)
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
 
-            # TODO truncate/write to existing data object.
-
-            # TODO Trigger quota violation.
-            #temp_file = tempfile.SpooledTemporaryFile()
-            #temp_file.write(' This will trigger a quota violation.')
-            #temp_file.seek(0)
-            #contents = ' This will trigger a quota violation.'
-            #p = subprocess.Popen(['printf', contents], stdout=subprocess.PIPE)
-            #self.admin.assert_icommand_fail(['istream', 'write', '-a', 'f1.txt'], stdin=p.stdout)
-            #p.wait()
-            #self.admin.assert_icommand_fail(['istream', 'write', '-a', data_object], stdin=temp_file)
-            #self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
-            #self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, iRODS!'])
+            # Append to existing data object.
+            contents = ' it!'
+            self.admin.assert_icommand(['istream', 'write', '-a', data_object], input=contents)
+            self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['truncated it!'])
+            expected_size_in_bytes = len('truncated it!')
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
 
             self.logical_quotas_stop_monitoring_collection(sandbox)
 
