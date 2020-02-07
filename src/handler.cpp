@@ -1253,7 +1253,7 @@ namespace irods::handler
 
     auto pep_api_data_obj_write::reset() noexcept -> void
     {
-        fpos_ = 0; 
+        size_diff_ = 0; 
     }
 
     auto pep_api_data_obj_write::pre(const std::string& _instance_name,
@@ -1273,10 +1273,12 @@ namespace irods::handler
             const auto& l1desc = irods::get_l1desc(input->l1descInx);
             const auto* path = l1desc.dataObjInfo->objPath; 
 
+            size_diff_ = fpos_map.at(make_unique_id(path)) + bbuf->len - size_on_disk(conn, path);
+
             // Only check for violations if new bytes are written.
-            if (bbuf->len > 0) {
-                for_each_monitored_collection(conn, attrs, path, [&attrs, bbuf](auto&, const auto& _info) {
-                    throw_if_maximum_size_in_bytes_violation(attrs, _info, bbuf->len);
+            if (size_diff_ > 0) {
+                for_each_monitored_collection(conn, attrs, path, [&attrs](auto&, const auto& _info) {
+                    throw_if_maximum_size_in_bytes_violation(attrs, _info, size_diff_);
                 });
             }
         }
@@ -1306,9 +1308,9 @@ namespace irods::handler
             fpos_map.at(make_unique_id(path)) += bbuf->len;
 
             // Only update the totals if new bytes are written.
-            if (bbuf->len > 0) {
-                for_each_monitored_collection(conn, attrs, path, [&conn, &attrs, bbuf](const auto& _collection, const auto& _info) {
-                    update_data_object_count_and_size(conn, attrs, _collection, _info, 0, bbuf->len);
+            if (size_diff_ > 0) {
+                for_each_monitored_collection(conn, attrs, path, [&conn, &attrs](const auto& _collection, const auto& _info) {
+                    update_data_object_count_and_size(conn, attrs, _collection, _info, 0, size_diff_);
                 });
             }
         }
