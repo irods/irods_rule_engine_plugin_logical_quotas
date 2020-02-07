@@ -231,7 +231,7 @@ namespace irods::handler
                          irods::callback& _effect_handler) -> irods::error;
 
     private:
-        inline static file_position_type fpos_ = 0; 
+        inline static size_type size_diff_ = 0; 
     }; // class pep_api_data_obj_write
 
     class pep_api_data_obj_close final
