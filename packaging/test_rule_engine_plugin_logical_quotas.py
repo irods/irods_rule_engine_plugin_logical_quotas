@@ -61,7 +61,6 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             # - Consider nesting
 
             sandbox = self.admin.session_collection
-
             self.logical_quotas_start_monitoring_collection(sandbox)
             self.logical_quotas_set_maximum_number_of_data_objects(sandbox, 2)
             self.logical_quotas_set_maximum_size_in_bytes(sandbox, 15)
@@ -153,10 +152,44 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
 
-            # TODO copy data object into monitored collection
-            # TODO copy data object to sibling collection
-            # TODO copy data object to child collection
-            # TODO copy data object back to parent collection.
+            col1 = self.admin.session_collection
+            self.logical_quotas_start_monitoring_collection(col1)
+            self.logical_quotas_set_maximum_number_of_data_objects(col1, 4)
+            self.logical_quotas_set_maximum_size_in_bytes(col1, 100)
+
+            # "col2" is a child collection of "col1".
+            col2 = os.path.join(col1, 'col.d')
+            self.admin.assert_icommand(['imkdir', col2])
+            self.logical_quotas_start_monitoring_collection(col2)
+            self.logical_quotas_set_maximum_number_of_data_objects(col2, 1)
+            self.logical_quotas_set_maximum_size_in_bytes(col2, 100)
+
+            # Put a data object into "col1".
+            data_object = 'foo.txt'
+            file_size = 1
+            self.put_new_data_object(data_object, file_size)
+            expected_number_of_objects = 1
+            expected_size_in_bytes = file_size
+            self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+
+            # Copy data object into child collection.
+            self.admin.assert_icommand(['icp', data_object, col2])
+            self.assert_quotas(col2, expected_number_of_objects, expected_size_in_bytes)
+
+            # Trigger quota violation.
+            self.admin.assert_icommand_fail(['icp', data_object, os.path.join(col2, 'foo.txt.copy')])
+            self.assert_quotas(col2, expected_number_of_objects, expected_size_in_bytes)
+
+            # Verify that "col1"'s quota totals have also changed as a result of "col2"'s totals.
+            expected_number_of_objects += 1
+            expected_size_in_bytes += file_size
+            self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+
+            # Copy data object into current collection.
+            self.admin.assert_icommand(['icp', data_object, 'foo.txt.copy'])
+            expected_number_of_objects += 1
+            expected_size_in_bytes += file_size
+            self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_copy_collection(self):
@@ -165,10 +198,10 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
 
-            # TODO copy collection into monitored collection
-            # TODO copy collection to sibling collection
-            # TODO copy collection to child collection
-            # TODO copy collection back to parent collection.
+            # TODO Copy collection into monitored collection
+            # TODO Copy collection to sibling collection
+            # TODO Copy collection to child collection
+            # TODO Copy collection back to parent collection.
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_rename_data_object(self):
@@ -202,7 +235,6 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             self.enable_rule_engine_plugin(config)
 
             sandbox = self.admin.session_collection
-
             self.logical_quotas_start_monitoring_collection(sandbox)
             self.logical_quotas_set_maximum_number_of_data_objects(sandbox, 10)
             self.logical_quotas_set_maximum_size_in_bytes(sandbox, len('hello, world!'))
