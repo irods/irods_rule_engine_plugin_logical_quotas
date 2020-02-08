@@ -215,6 +215,66 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             # TODO rename/move collection back to parent collection.
             # TODO rename/move data object under sibling collection.
 
+            col1 = self.admin.session_collection
+            self.logical_quotas_start_monitoring_collection(col1)
+            self.logical_quotas_set_maximum_number_of_data_objects(col1, 4)
+            self.logical_quotas_set_maximum_size_in_bytes(col1, 100)
+
+            # "col2" is a child collection of "col1".
+            col2 = os.path.join(col1, 'col.d')
+            self.admin.assert_icommand(['imkdir', col2])
+            self.logical_quotas_start_monitoring_collection(col2)
+            self.logical_quotas_set_maximum_number_of_data_objects(col2, 1)
+            self.logical_quotas_set_maximum_size_in_bytes(col2, 100)
+
+            # "col3" is a sibling collection to "col1".
+            col3 = os.path.join(col1, 'col.e')
+            self.admin.assert_icommand(['imkdir', col3])
+            self.logical_quotas_start_monitoring_collection(col3)
+            self.logical_quotas_set_maximum_number_of_data_objects(col3, 4)
+            self.logical_quotas_set_maximum_size_in_bytes(col3, 100)
+
+            # Put a data object into "col1".
+            data_object = 'foo.txt'
+            file_size = 1
+            self.put_new_data_object(data_object, file_size)
+            expected_number_of_objects = 1
+            expected_size_in_bytes = file_size
+            self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+            self.assert_quotas(col2, 0, 0)
+
+            # Rename data object in-place.
+            self.admin.assert_icommand(['imv', data_object, 'foo.txt.renamed'])
+            self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+            self.assert_quotas(col2, 0, 0)
+            data_object = 'foo.txt.renamed'
+
+            # Move data object into child collection.
+            self.admin.assert_icommand(['imv', data_object, col2])
+            self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+            self.assert_quotas(col2, expected_number_of_objects, expected_size_in_bytes)
+
+            # Move data object back into parent collection.
+            self.admin.assert_icommand(['imv', os.path.join(col2, data_object), col1])
+            self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+            self.assert_quotas(col2, 0, 0)
+
+            # Copy data object into child collection.
+            self.admin.assert_icommand(['icp', data_object, os.path.join(col2, 'foo.txt.copy')])
+            self.assert_quotas(col2, expected_number_of_objects, expected_size_in_bytes)
+            expected_number_of_objects += 1
+            expected_size_in_bytes += file_size
+            self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+
+            # Trigger quota violation.
+            self.admin.assert_icommand_fail(['imv', data_object, col2])
+            self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+            self.assert_quotas(col2, expected_number_of_objects - 1, expected_size_in_bytes - 1)
+
+            # TODO Move all data objects to sibling collection "col3".
+            #self.admin.assert_icommand_fail(['imv', data_object, col3])
+            #self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_rename_collection(self):
 	config = IrodsConfig()
