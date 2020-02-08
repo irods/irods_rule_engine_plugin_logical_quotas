@@ -272,8 +272,11 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             self.assert_quotas(col2, expected_number_of_objects - 1, expected_size_in_bytes - 1)
 
             # TODO Move all data objects to sibling collection "col3".
-            #self.admin.assert_icommand_fail(['imv', data_object, col3])
+            self.admin.assert_icommand(['imv', data_object, col3])
+            self.admin.assert_icommand(['imv', os.path.join(col2, 'foo.txt.copy'), col3])
             #self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+            #self.assert_quotas(col2, expected_number_of_objects, expected_size_in_bytes)
+            #self.assert_quotas(col3, expected_number_of_objects, expected_size_in_bytes)
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_rename_collection(self):
