@@ -42,20 +42,6 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             self.enable_rule_engine_plugin(config)
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
-    def test_set_maximum_avus_without_monitoring_avus(self):
-	config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
-    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
-    def test_set_monitoring_avus_without_maximum_avus(self):
-	config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
-    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_create_data_object(self):
 	config = IrodsConfig()
 
@@ -170,6 +156,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             # TODO copy data object into monitored collection
             # TODO copy data object to sibling collection
             # TODO copy data object to child collection
+            # TODO copy data object back to parent collection.
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_copy_collection(self):
@@ -181,6 +168,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             # TODO copy collection into monitored collection
             # TODO copy collection to sibling collection
             # TODO copy collection to child collection
+            # TODO copy collection back to parent collection.
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_rename_data_object(self):
@@ -191,6 +179,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
             # TODO rename/move data object under same collection.
             # TODO rename/move data object under child collection.
+            # TODO rename/move collection back to parent collection.
             # TODO rename/move data object under sibling collection.
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
@@ -202,6 +191,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
             # TODO rename/move collection under same collection.
             # TODO rename/move collection under child collection.
+            # TODO rename/move collection back to parent collection.
             # TODO rename/move collection under sibling collection.
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
@@ -270,96 +260,6 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             self.enable_rule_engine_plugin(config)
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
-    def test_basic_functionality(self):
-        def do_test(root_coll, child_coll, data_object):
-            root_expected_number_of_objects = 1
-            root_expected_size_in_bytes = 20
-
-            child_expected_number_of_objects = 0
-            child_expected_size_in_bytes = 0
-
-            #
-            # TEST 1: Put new data object.
-            #
-            filename = 'bar'
-            size = 20
-            lib.make_file(filename, size)
-            other_data_object = os.path.join(root_coll, filename)
-            self.admin.assert_icommand(['iput', filename, other_data_object])
-            os.remove(filename)
-
-            # Check quotas. The quotas for the "child_coll" should not have been modified.
-            root_expected_number_of_objects += 1
-            root_expected_size_in_bytes += size
-            self.assert_quotas(root_coll, root_expected_number_of_objects, root_expected_size_in_bytes)
-            self.assert_quotas(child_coll, child_expected_number_of_objects, child_expected_size_in_bytes)
-
-            #
-            # TEST 2: Move the data objects under another collection.
-            #
-            self.admin.assert_icommand(['imv', data_object, os.path.join(child_coll, os.path.basename(data_object))])
-            self.admin.assert_icommand(['imv', other_data_object, os.path.join(child_coll, os.path.basename(other_data_object))])
-            data_object = os.path.join(child_coll, os.path.basename(data_object))
-            other_data_object = os.path.join(child_coll, os.path.basename(other_data_object))
-
-            # Check quotas. The quotas for the "root_coll" should not have been modified.
-            child_expected_number_of_objects = root_expected_number_of_objects
-            child_expected_size_in_bytes = root_expected_size_in_bytes
-            self.assert_quotas(root_coll, root_expected_number_of_objects, root_expected_size_in_bytes)
-            self.assert_quotas(child_coll, child_expected_number_of_objects, child_expected_size_in_bytes)
-
-            #
-            # TEST 3: Exceeding Quotas
-            #
-            filename = 'foobar'
-            size = 0
-            lib.make_file(filename, size)
-            self.admin.assert_icommand_fail(['iput', filename, os.path.join(child_coll, filename)])
-            os.remove(filename)
-
-            filename = 'foobar'
-            size = 200
-            lib.make_file(filename, size)
-            self.admin.assert_icommand_fail(['iput', filename, os.path.join(root_coll, filename)])
-            os.remove(filename)
-
-            #
-            # TEST 4: Recursively copy "child_coll" into "root_coll".
-            #
-            other_child_coll = os.path.join(root_coll, 'col.b')
-            self.admin.assert_icommand(['icp', '-r', child_coll, other_child_coll])
-
-            # Check quotas. The quotas for the "child_coll" should not have been modified.
-            root_expected_number_of_objects += 2
-            root_expected_size_in_bytes += 40
-            self.assert_quotas(root_coll, root_expected_number_of_objects, root_expected_size_in_bytes)
-            self.assert_quotas(child_coll, child_expected_number_of_objects, child_expected_size_in_bytes)
-
-            #
-            # TEST 5: Remove a data object from "other_child_coll".
-            #
-            self.admin.assert_icommand(['irm', '-f', os.path.join(other_child_coll, os.path.basename(other_data_object))])
-
-            # Check quotas. The quotas for the "child_coll" should not have been modified.
-            root_expected_number_of_objects -= 1
-            root_expected_size_in_bytes -= 20
-            self.assert_quotas(root_coll, root_expected_number_of_objects, root_expected_size_in_bytes)
-            self.assert_quotas(child_coll, child_expected_number_of_objects, child_expected_size_in_bytes)
- 
-            #
-            # TEST 6: Recursively remove "other_child_coll".
-            #
-            self.admin.assert_icommand(['irm', '-rf', other_child_coll])
-
-            # Check quotas. The quotas for the "child_coll" should not have been modified.
-            root_expected_number_of_objects -= 1
-            root_expected_size_in_bytes -= 20
-            self.assert_quotas(root_coll, root_expected_number_of_objects, root_expected_size_in_bytes)
-            self.assert_quotas(child_coll, child_expected_number_of_objects, child_expected_size_in_bytes)
-
-        self.run_test(do_test)
-
-    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_unset_maximum_quotas_when_not_tracking__issue_5(self):
         config = IrodsConfig()
         col = self.admin.session_collection
@@ -396,107 +296,24 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
         self.admin.assert_icommand(['iput', filename, logical_path])
         os.remove(filename)
 
-    def make_directory(self, dir_name, files, file_size):
-        os.makedirs(dir_name)
-        for f in files:
-            lib.make_file(os.path.join(dir_name, f), file_size, 'arbitrary')
-
-    def make_collection(self, coll_name, files, file_size):
-        self.admin.assert_icommand(['imkdir', coll_name])
-        for f in files:
-            self.put_new_data_object(os.path.join(coll_name, f), file_size)
-
     def put_new_data_object_exceeds_quota(self, logical_path, size=0):
         filename = os.path.basename(logical_path)
         lib.make_file(filename, size, 'arbitrary')
         self.admin.assert_icommand_fail(['iput', filename, logical_path])
         os.remove(filename)
 
+    def make_directory(self, dir_name, files, file_size):
+        os.makedirs(dir_name)
+        for f in files:
+            lib.make_file(os.path.join(dir_name, f), file_size, 'arbitrary')
+
     def assert_quotas(self, coll, expected_number_of_objects, expected_size_in_bytes):
         values = self.get_logical_quotas_attribute_values(coll)
         self.assertEquals(values[self.total_number_of_data_objects_attribute()], expected_number_of_objects)
         self.assertEquals(values[self.total_size_in_bytes_attribute()],          expected_size_in_bytes)
 
-    # TODO Return the max number of objects and max size in bytes.
-    # Creates and monitors the following tree under the session collection:
-    #   {session_collection}/logical_quotas_root/
-    #   {session_collection}/logical_quotas_root/col.a/
-    #   {session_collection}/logical_quotas_root/foo
-    def init_logical_quotas_tree(self):
-        root_coll = os.path.join(self.admin.session_collection, 'logical_quotas_root')
-        self.admin.assert_icommand(['imkdir', root_coll])
-
-        child_coll = os.path.join(root_coll, 'col.a')
-        self.admin.assert_icommand(['imkdir', child_coll])
-
-        filename = 'foo'
-        lib.make_file(filename, 20)
-        data_object = os.path.join(root_coll, filename)
-        self.admin.assert_icommand(['iput', filename, data_object])
-        os.remove(filename)
-
-        # Start monitoring root collection and set maximums.
-        self.logical_quotas_start_monitoring_collection(root_coll)
-
-        max_number_of_data_objects = 5
-        self.exec_logical_quotas_operation(json.dumps({
-            'operation': 'logical_quotas_set_maximum_number_of_data_objects',
-            'collection': root_coll,
-            'value': max_number_of_data_objects
-        }))
-
-        max_size_in_bytes = 100
-        self.exec_logical_quotas_operation(json.dumps({
-            'operation': 'logical_quotas_set_maximum_size_in_bytes',
-            'collection': root_coll,
-            'value': max_size_in_bytes
-        }))
-
-        include_maximums = True
-        values = self.get_logical_quotas_attribute_values(root_coll, include_maximums)
-        self.assertEquals(values[self.maximum_number_of_data_objects_attribute()], max_number_of_data_objects)
-        self.assertEquals(values[self.maximum_size_in_bytes_attribute()],          max_size_in_bytes)
-        self.assertEquals(values[self.total_number_of_data_objects_attribute()],   1)
-        self.assertEquals(values[self.total_size_in_bytes_attribute()],            20)
-
-        # Start monitoring child collection and set maximums.
-        self.logical_quotas_start_monitoring_collection(child_coll)
-
-        max_number_of_data_objects = 2
-        self.exec_logical_quotas_operation(json.dumps({
-            'operation': 'logical_quotas_set_maximum_number_of_data_objects',
-            'collection': child_coll,
-            'value': max_number_of_data_objects
-        }))
-
-        max_size_in_bytes = 40
-        self.exec_logical_quotas_operation(json.dumps({
-            'operation': 'logical_quotas_set_maximum_size_in_bytes',
-            'collection': child_coll,
-            'value': max_size_in_bytes
-        }))
-
-        values = self.get_logical_quotas_attribute_values(child_coll, include_maximums)
-        self.assertEquals(values[self.maximum_number_of_data_objects_attribute()], max_number_of_data_objects)
-        self.assertEquals(values[self.maximum_size_in_bytes_attribute()],          max_size_in_bytes)
-        self.assertEquals(values[self.total_number_of_data_objects_attribute()],   0)
-        self.assertEquals(values[self.total_size_in_bytes_attribute()],            0)
-
-        return (root_coll, child_coll, data_object)
-
-    #def run_test(self, do_test, collection, max_number_of_objects, max_size_in_bytes):
-    def run_test(self, test):
-	config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-            root, child, data_object  = self.init_logical_quotas_tree()
-            test(root, child, data_object)
-            self.logical_quotas_stop_monitoring_collection(child)
-            self.logical_quotas_stop_monitoring_collection(root)
-            self.admin.assert_icommand(['irm', '-rf', root])
-
     def enable_rule_engine_plugin(self, config, namespace=None):
+        config.server_config['log_level']['rule_engine'] = 'trace'
         config.server_config['plugin_configuration']['rule_engines'].insert(0, {
             'instance_name': 'irods_rule_engine_plugin-logical_quotas-instance',
             'plugin_name': 'irods_rule_engine_plugin-logical_quotas',
