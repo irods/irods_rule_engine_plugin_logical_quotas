@@ -53,14 +53,24 @@ namespace
         parent_path(const parent_path&) = delete;
         auto operator=(const parent_path&) -> parent_path& = delete;
 
-        auto of(const fs::path& _p) -> bool
+        auto of(const fs::path& _child) -> bool
         {
-            if (p_ == _p) {
+            if (p_ == _child) {
                 return false;
             }
 
-            const auto end = std::end(_p);
-            return std::search(std::begin(_p), end, std::begin(p_), std::begin(p_)) != end;
+            auto p_iter = std::begin(p_);
+            auto p_last = std::end(p_);
+            auto c_iter = std::begin(_child);
+            auto c_last = std::end(_child);
+
+            for (; p_iter != p_last && c_iter != c_last && *p_iter == *c_iter; ++p_iter, ++c_iter);
+
+            return (p_iter == p_last);
+
+            // XXX boost::starts_with(c_str(), c_str()) is actually faster, but is not used
+            // because it does not understand path objects. It is not enough to simply compare
+            // strings.
         }
 
     private:
@@ -874,53 +884,51 @@ namespace irods::handler
                 throw logical_quotas_error{"Logical Quotas Policy: Invalid object type", SYS_INTERNAL_ERR};
             }
 
+            const auto in_violation = [&](const auto&, const auto& _info)
             {
-                auto src_path = get_monitored_parent_collection(conn, attrs, input->srcDataObjInp.objPath);
-                auto dst_path = get_monitored_parent_collection(conn, attrs, input->destDataObjInp.objPath);
+                throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
+                throw_if_maximum_size_in_bytes_violation(attrs, _info, size_in_bytes_);
+            };
 
-                if (src_path && dst_path) {
-                    if (*src_path == *dst_path) {
-                        return CODE(RULE_ENGINE_CONTINUE);
-                    }
+            auto src_path = get_monitored_parent_collection(conn, attrs, input->srcDataObjInp.objPath);
+            auto dst_path = get_monitored_parent_collection(conn, attrs, input->destDataObjInp.objPath);
 
-                    // Moving object(s) from a parent collection to a child collection.
-                    if (parent_path{*dst_path}.of(*src_path)) {
-                        for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
-                            if (parent_path{_collection}.of(*src_path)) {
-                                throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
-                                throw_if_maximum_size_in_bytes_violation(attrs, _info, size_in_bytes_);
-                            }
-                        });
-                    }
-                    // Moving object(s) from a child collection to a parent collection.
-                    else if (parent_path{*src_path}.of(*dst_path)) {
-                        for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
-                            if (parent_path{_collection}.of(*dst_path)) {
-                                throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
-                                throw_if_maximum_size_in_bytes_violation(attrs, _info, size_in_bytes_);
-                            }
-                        });
-                    }
-                    // Moving objects(s) between unrelated collection trees.
-                    else {
-                        for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto&, const auto& _info) {
-                            throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
-                            throw_if_maximum_size_in_bytes_violation(attrs, _info, size_in_bytes_);
-                        });
-                    }
+            if (src_path && dst_path) {
+                if (*src_path == *dst_path) {
+                    return CODE(RULE_ENGINE_CONTINUE);
                 }
-                else if (dst_path) {
-                    for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto&, const auto& _info) {
+
+                // Moving object(s) from a parent collection to a child collection.
+                if (parent_path{*src_path}.of(*dst_path)) {
+                    log::rule_engine::debug("src={}, dst={} [src is parent of dst]", src_path->c_str(), dst_path->c_str());
+                    for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
+                        // Return immediately if "_collection" is equal to "*src_path". At this point,
+                        // there is no need to check if any quotas will be violated. The totals will not
+                        // change for parents of the source collection.
+                        if (_collection == *src_path) {
+                            return;
+                        }
+
                         throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
                         throw_if_maximum_size_in_bytes_violation(attrs, _info, size_in_bytes_);
                     });
                 }
+                // Moving object(s) from a child collection to a parent collection.
+                else if (parent_path{*dst_path}.of(*src_path)) {
+                    log::rule_engine::debug("src={}, dst={} [dst is parent of src]", src_path->c_str(), dst_path->c_str());
+                    for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, in_violation);
+                }
+                // Moving objects(s) between unrelated collection trees.
+                else {
+                    log::rule_engine::debug("src={}, dst={} [src and dst are siblings]", src_path->c_str(), dst_path->c_str());
+                    for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, in_violation);
+                }
             }
-
-            for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
-                throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
-                throw_if_maximum_size_in_bytes_violation(attrs, _info, size_in_bytes_);
-            });
+            else if (dst_path) {
+                using namespace std::string_literals;
+                log::rule_engine::debug("dst={} [only dst is monitored]"s, dst_path->c_str());
+                for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, in_violation);
+            }
         }
         catch (const logical_quotas_error& e) {
             log_exception_message(e.what(), _effect_handler);
@@ -974,20 +982,14 @@ namespace irods::handler
                 }
 
                 // Moving object(s) from a parent collection to a child collection.
-                if (parent_path{*dst_path}.of(*src_path)) {
-                    for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
-                        if (parent_path{_collection}.of(*src_path)) {
-                            update_data_object_count_and_size(conn, attrs, _collection, _info, data_objects_, size_in_bytes_);
-                        }
-                    });
+                if (parent_path{*src_path}.of(*dst_path)) {
+                    auto info = get_monitored_collection_info(conn, attrs, *dst_path);
+                    update_data_object_count_and_size(conn, attrs, *dst_path, info, data_objects_, size_in_bytes_);
                 }
                 // Moving object(s) from a child collection to a parent collection.
-                else if (parent_path{*src_path}.of(*dst_path)) {
-                    for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
-                        if (parent_path{_collection}.of(*dst_path)) {
-                            update_data_object_count_and_size(conn, attrs, _collection, _info, -data_objects_, -size_in_bytes_);
-                        }
-                    });
+                else if (parent_path{*dst_path}.of(*src_path)) {
+                    auto info = get_monitored_collection_info(conn, attrs, *src_path);
+                    update_data_object_count_and_size(conn, attrs, *src_path, info, -data_objects_, -size_in_bytes_);
                 }
                 // Moving objects(s) between unrelated collection trees.
                 else {
