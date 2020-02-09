@@ -796,7 +796,8 @@ namespace irods::handler
             const auto& instance_config = _instance_configs.at(_instance_name);
             const auto& attrs = instance_config.attributes();
 
-            if (forced_overwrite_ = fs::server::exists(*rei.rsComm, input->objPath); forced_overwrite_) {
+            if (fs::server::exists(*rei.rsComm, input->objPath)) {
+                forced_overwrite_ = true;
                 const size_type existing_size = fs::server::data_object_size(conn, input->objPath);
                 size_diff_ = static_cast<size_type>(input->dataSize) - existing_size;
 
@@ -900,7 +901,6 @@ namespace irods::handler
 
                 // Moving object(s) from a parent collection to a child collection.
                 if (parent_path{*src_path}.of(*dst_path)) {
-                    log::rule_engine::debug("src={}, dst={} [src is parent of dst]", src_path->c_str(), dst_path->c_str());
                     for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&](const auto& _collection, const auto& _info) {
                         // Return immediately if "_collection" is equal to "*src_path". At this point,
                         // there is no need to check if any quotas will be violated. The totals will not
@@ -915,18 +915,15 @@ namespace irods::handler
                 }
                 // Moving object(s) from a child collection to a parent collection.
                 else if (parent_path{*dst_path}.of(*src_path)) {
-                    log::rule_engine::debug("src={}, dst={} [dst is parent of src]", src_path->c_str(), dst_path->c_str());
                     for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, in_violation);
                 }
                 // Moving objects(s) between unrelated collection trees.
                 else {
-                    log::rule_engine::debug("src={}, dst={} [src and dst are siblings]", src_path->c_str(), dst_path->c_str());
                     for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, in_violation);
                 }
             }
             else if (dst_path) {
                 using namespace std::string_literals;
-                log::rule_engine::debug("dst={} [only dst is monitored]"s, dst_path->c_str());
                 for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, in_violation);
             }
         }
