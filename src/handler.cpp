@@ -147,6 +147,9 @@ namespace
     template <typename Value, typename Map>
     auto get_attribute_value(const Map& _map, std::string_view _key) -> Value;
 
+    auto get_instance_config(const irods::instance_configuration_map& _map,
+                             std::string_view _key) -> const irods::instance_configuration&;
+
     auto make_unique_id(fs::path _p) -> std::string;
 
     auto size_on_disk(rsComm_t& _conn, fs::path _p) -> size_type;
@@ -236,8 +239,10 @@ namespace
     {
         const auto& max_attr_name = _attrs.maximum_number_of_data_objects();
 
-        if (_tracking_info.find(max_attr_name) != std::end(_tracking_info)) {
-            if (get_attribute_value<size_type>(_tracking_info, _attrs.total_number_of_data_objects()) + _delta > _tracking_info.at(max_attr_name)) {
+        if (const auto iter = _tracking_info.find(max_attr_name); iter != std::end(_tracking_info)) {
+            const auto total = get_attribute_value<size_type>(_tracking_info, _attrs.total_number_of_data_objects());
+
+            if (total + _delta > iter->second) {
                 throw irods::logical_quotas_error{"Logical Quotas Policy Violation: Adding object exceeds maximum number of objects limit",
                                                   SYS_RESC_QUOTA_EXCEEDED};
             }
@@ -250,8 +255,10 @@ namespace
     {
         const auto& max_attr_name = _attrs.maximum_size_in_bytes();
 
-        if (_tracking_info.find(max_attr_name) != std::end(_tracking_info)) {
-            if (get_attribute_value<size_type>(_tracking_info, _attrs.total_size_in_bytes()) + _delta > _tracking_info.at(max_attr_name)) {
+        if (const auto iter = _tracking_info.find(max_attr_name); iter != std::end(_tracking_info)) {
+            const auto total = get_attribute_value<size_type>(_tracking_info, _attrs.total_size_in_bytes());
+
+            if (total + _delta > iter->second) {
                 throw irods::logical_quotas_error{"Logical Quotas Policy Violation: Adding object exceeds maximum data size in bytes limit",
                                                   SYS_RESC_QUOTA_EXCEEDED};
             }
@@ -346,7 +353,7 @@ namespace
             }
 
             switch_user(rei, *username, [&] {
-                const auto& attrs = _instance_configs.at(_instance_name).attributes();
+                const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
                 const auto info = get_monitored_collection_info(conn, attrs, path);
 
                 for (auto&& attribute_name : _func(attrs)) {
@@ -419,7 +426,19 @@ namespace
             return iter->second;
         }
 
-        throw std::runtime_error{fmt::format("Logical Quotas Policy: Failed to find policy metadata [{}]", _key)};
+        throw std::runtime_error{fmt::format("Logical Quotas Policy: Failed to find metadata [{}]", _key)};
+    }
+
+    auto get_instance_config(const irods::instance_configuration_map& _map,
+                             std::string_view _key) -> const irods::instance_configuration&
+    {
+        try {
+            return _map.at(_key.data());
+        }
+        catch (const std::out_of_range&) {
+            throw std::runtime_error{fmt::format("Logical Quotas Policy: Failed to find configuration for "
+                                                 "rule engine plugin instance [{}]", _key)};
+        }
     }
 
     auto make_unique_id(fs::path _p) -> std::string
@@ -491,7 +510,7 @@ namespace irods::handler
                     objects = row[0];
                 }
 
-                const auto& attrs = _instance_configs.at(_instance_name).attributes();
+                const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
                 fs::server::set_metadata(*rei.rsComm, path, {attrs.total_number_of_data_objects(),  objects.empty() ? "0" : objects});
             });
         }
@@ -527,7 +546,7 @@ namespace irods::handler
                     bytes = row[0];
                 }
 
-                const auto& attrs = _instance_configs.at(_instance_name).attributes();
+                const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
                 fs::server::set_metadata(*rei.rsComm, path, {attrs.total_size_in_bytes(), bytes.empty() ? "0" : bytes});
             });
         }
@@ -574,7 +593,7 @@ namespace irods::handler
 
             switch_user(rei, *username, [&] {
                 const auto max_objects = std::to_string(boost::any_cast<size_type>(*++args_iter));
-                const auto& attrs = _instance_configs.at(_instance_name).attributes();
+                const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
                 fs::server::set_metadata(*rei.rsComm, path, {attrs.maximum_number_of_data_objects(), max_objects});
             });
         }
@@ -604,7 +623,7 @@ namespace irods::handler
 
             switch_user(rei, *username, [&] {
                 const auto max_bytes = std::to_string(boost::any_cast<size_type>(*++args_iter));
-                const auto& attrs = _instance_configs.at(_instance_name).attributes();
+                const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
                 fs::server::set_metadata(*rei.rsComm, path, {attrs.maximum_size_in_bytes(), max_bytes});
             });
         }
@@ -668,7 +687,7 @@ namespace irods::handler
                                     irods::callback& _effect_handler) -> irods::error
     {
         try {
-            const auto& instance_config = _instance_configs.at(_instance_name);
+            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
             auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
@@ -711,7 +730,7 @@ namespace irods::handler
             auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& attrs = _instance_configs.at(_instance_name).attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
                 update_data_object_count_and_size(conn, attrs, _collection, _info, data_objects_, size_in_bytes_);
@@ -734,7 +753,7 @@ namespace irods::handler
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& instance_config = _instance_configs.at(_instance_name);
+            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
             const auto& attrs = instance_config.attributes();
 
             for_each_monitored_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
@@ -762,7 +781,7 @@ namespace irods::handler
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& attrs = _instance_configs.at(_instance_name).attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             for_each_monitored_collection(conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
                 update_data_object_count_and_size(conn, attrs, _collection, _info, 1, 0);
@@ -793,7 +812,7 @@ namespace irods::handler
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& instance_config = _instance_configs.at(_instance_name);
+            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
             const auto& attrs = instance_config.attributes();
 
             if (fs::server::exists(*rei.rsComm, input->objPath)) {
@@ -833,7 +852,7 @@ namespace irods::handler
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& attrs = _instance_configs.at(_instance_name).attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             if (forced_overwrite_) {
                 for_each_monitored_collection(conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
@@ -868,7 +887,7 @@ namespace irods::handler
         reset();
 
         try {
-            const auto& instance_config = _instance_configs.at(_instance_name);
+            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
             auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
@@ -948,7 +967,7 @@ namespace irods::handler
             auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& attrs = _instance_configs.at(_instance_name).attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
             auto src_path = get_monitored_parent_collection(conn, attrs, input->srcDataObjInp.objPath);
             auto dst_path = get_monitored_parent_collection(conn, attrs, input->destDataObjInp.objPath);
 
@@ -1038,7 +1057,7 @@ namespace irods::handler
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& attrs = _instance_configs.at(_instance_name).attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             if (auto collection = get_monitored_parent_collection(conn, attrs, input->objPath); collection) {
                 size_in_bytes_ = fs::server::data_object_size(conn, input->objPath);
@@ -1061,7 +1080,7 @@ namespace irods::handler
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& attrs = _instance_configs.at(_instance_name).attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             for_each_monitored_collection(conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
                 update_data_object_count_and_size(conn, attrs, _collection, _info, -1, -size_in_bytes_);
@@ -1092,7 +1111,7 @@ namespace irods::handler
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& instance_config = _instance_configs.at(_instance_name);
+            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
             const auto& attrs = instance_config.attributes();
 
             if (!fs::server::exists(*rei.rsComm, input->objPath)) {
@@ -1132,7 +1151,7 @@ namespace irods::handler
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& attrs = _instance_configs.at(_instance_name).attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             if (data_objects_ > 0 || size_in_bytes_ > 0) {
                 for_each_monitored_collection(conn, attrs, input->objPath, [&conn, &attrs](const auto& _collection, const auto& _info) {
@@ -1180,7 +1199,7 @@ namespace irods::handler
             auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& instance_config = _instance_configs.at(_instance_name);
+            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
             const auto& attrs = instance_config.attributes();
             const auto& l1desc = irods::get_l1desc(input->l1descInx); 
 
@@ -1267,7 +1286,7 @@ namespace irods::handler
             auto* bbuf = get_pointer<bytesBuf_t>(_rule_arguments, 3);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& instance_config = _instance_configs.at(_instance_name);
+            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
             const auto& attrs = instance_config.attributes();
             const auto& l1desc = irods::get_l1desc(input->l1descInx);
             const auto* path = l1desc.dataObjInfo->objPath; 
@@ -1299,7 +1318,7 @@ namespace irods::handler
             auto* bbuf = get_pointer<bytesBuf_t>(_rule_arguments, 3);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& instance_config = _instance_configs.at(_instance_name);
+            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
             const auto& attrs = instance_config.attributes();
             const auto& l1desc = irods::get_l1desc(input->l1descInx);
             const auto* path = l1desc.dataObjInfo->objPath;
@@ -1379,7 +1398,7 @@ namespace irods::handler
             auto* input = get_pointer<collInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& attrs = _instance_configs.at(_instance_name).attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             if (auto collection = get_monitored_parent_collection(conn, attrs, input->collName); collection) {
                 std::tie(data_objects_, size_in_bytes_) = compute_data_object_count_and_size(conn, input->collName);
@@ -1402,7 +1421,7 @@ namespace irods::handler
             auto* input = get_pointer<collInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& attrs = _instance_configs.at(_instance_name).attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             for_each_monitored_collection(conn, attrs, input->collName, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
                 update_data_object_count_and_size(conn, attrs, _collection, _info, -data_objects_, -size_in_bytes_);
