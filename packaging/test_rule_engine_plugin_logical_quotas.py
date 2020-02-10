@@ -74,7 +74,27 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 	config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
+            config.server_config['log_level']['rule_engine'] = 'trace'
+            config.server_config['plugin_configuration']['rule_engines'].insert(0, {
+                'instance_name': 'irods_rule_engine_plugin-logical_quotas-instance',
+                'plugin_name': 'irods_rule_engine_plugin-logical_quotas',
+                'plugin_specific_configuration': {
+                    'namespace': self.logical_quotas_namespace(),
+                    'metadata_attribute_names': {
+                        'mum_numberata_objects': self.maximum_number_of_data_objects_attribute_name(),
+                        'aximum_': self.maximum_size_in_bytes_attribute_name(),
+                        'umber_of_data': self.total_number_of_data_objects_attribute_name(),
+                        'total_size_in': self.total_size_in_bytes_attribute_name()
+                    }
+                }
+            })
+            lib.update_json_file_from_dict(config.server_config_path, config.server_config)
+
+            filename = os.path.join(self.admin.local_session_dir, 'foo.txt')
+            lib.make_file(filename, 1, 'arbitrary')
+            error_msg = 'Failed to find configuration for rule engine plugin instance [irods_rule_engine_plugin-logical_quotas-instance]'
+            self.admin.assert_icommand_fail(['iput', filename], 'STDOUT', [error_msg])
+            os.remove(filename)
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_put_data_object(self):
