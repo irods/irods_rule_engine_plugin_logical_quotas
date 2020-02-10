@@ -5,7 +5,6 @@ import sys
 import shutil
 import json
 import subprocess
-import tempfile
 
 if sys.version_info < (2, 7):
     import unittest2 as unittest
@@ -353,10 +352,46 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
 
-            # TODO rename/move collection under same collection.
-            # TODO rename/move collection under child collection.
-            # TODO rename/move collection back to parent collection.
-            # TODO rename/move collection under sibling collection.
+            col1 = os.path.join(self.admin.session_collection, 'col.a')
+            self.admin.assert_icommand(['imkdir', col1])
+            self.logical_quotas_start_monitoring_collection(col1)
+            self.logical_quotas_set_maximum_number_of_data_objects(col1, 1)
+            self.logical_quotas_set_maximum_size_in_bytes(col1, 100)
+
+            # "col2" is a sibling collection to "col1".
+            col2 = os.path.join(self.admin.session_collection, 'col.b')
+            self.admin.assert_icommand(['imkdir', col2])
+            self.logical_quotas_start_monitoring_collection(col2)
+            self.logical_quotas_set_maximum_number_of_data_objects(col2, 1)
+            self.logical_quotas_set_maximum_size_in_bytes(col2, 100)
+
+            # Put a data object into "col1".
+            data_object = os.path.join(col1, 'foo.txt')
+            file_size = 1
+            self.put_new_data_object(data_object, file_size)
+            expected_number_of_objects = 1
+            expected_size_in_bytes = file_size
+            self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+
+            # Rename collection in-place.
+            new_name = os.path.join(self.admin.session_collection, 'col.a.renamed')
+            self.admin.assert_icommand(['imv', col1, new_name])
+            col1 = new_name
+            self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+
+            # Move collection under sibling collection.
+            src_col = col1
+            col1 = os.path.join(col2, os.path.basename(col1))
+            self.admin.assert_icommand(['imv', src_col, col1])
+            self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+            self.assert_quotas(col2, expected_number_of_objects, expected_size_in_bytes)
+
+            # Move collection back out of sibling collection.
+            src_col = col1
+            col1 = os.path.join(self.admin.session_collection, os.path.basename(col1))
+            self.admin.assert_icommand(['imv', src_col, col1])
+            self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
+            self.assert_quotas(col2, 0, 0)
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_stream_data_object(self):
