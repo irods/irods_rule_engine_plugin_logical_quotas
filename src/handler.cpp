@@ -410,7 +410,7 @@ namespace
                                        fs::path _collection,
                                        Function _func) -> void
     {
-        for (auto collection = get_monitored_parent_collection(_conn, _attrs, _collection);
+        for (auto collection = get_monitored_parent_collection(_conn, _attrs, _collection.parent_path());
              collection;
              collection = get_monitored_parent_collection(_conn, _attrs, collection->parent_path()))
         {
@@ -687,11 +687,10 @@ namespace irods::handler
                                     irods::callback& _effect_handler) -> irods::error
     {
         try {
-            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
             auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& attrs = instance_config.attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
                 data_objects_ = 1;
@@ -753,8 +752,7 @@ namespace irods::handler
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
-            const auto& attrs = instance_config.attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             for_each_monitored_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
                 throw_if_maximum_number_of_data_objects_violation(attrs, _info, 1);
@@ -812,8 +810,7 @@ namespace irods::handler
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
-            const auto& attrs = instance_config.attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             if (fs::server::exists(*rei.rsComm, input->objPath)) {
                 forced_overwrite_ = true;
@@ -887,11 +884,17 @@ namespace irods::handler
         reset();
 
         try {
-            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
             auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
+
+            // The parent of both paths are the same, then this operation is simply a rename of the
+            // source data object or collection. In this case, there is nothing to do.
+            if (fs::path{input->srcDataObjInp.objPath}.parent_path() == fs::path{input->destDataObjInp.objPath}.parent_path()) {
+                return CODE(RULE_ENGINE_CONTINUE);
+            }
+
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& attrs = instance_config.attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
                 data_objects_ = 1;
@@ -963,6 +966,11 @@ namespace irods::handler
                                        std::list<boost::any>& _rule_arguments,
                                        irods::callback& _effect_handler) -> irods::error
     {
+        // There is no change in state, therefore return immediately.
+        if (0 == data_objects_ && 0 == size_in_bytes_) {
+            return CODE(RULE_ENGINE_CONTINUE);
+        }
+
         try {
             auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
@@ -1111,8 +1119,7 @@ namespace irods::handler
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
-            const auto& attrs = instance_config.attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             if (!fs::server::exists(*rei.rsComm, input->objPath)) {
                 data_objects_ = 1;
@@ -1199,8 +1206,7 @@ namespace irods::handler
             auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
-            const auto& attrs = instance_config.attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
             const auto& l1desc = irods::get_l1desc(input->l1descInx); 
 
             // TODO Does opening a data object with the O_TRUNC flag cause an update to the catalog?
@@ -1286,8 +1292,7 @@ namespace irods::handler
             auto* bbuf = get_pointer<bytesBuf_t>(_rule_arguments, 3);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
-            const auto& attrs = instance_config.attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
             const auto& l1desc = irods::get_l1desc(input->l1descInx);
             const auto* path = l1desc.dataObjInfo->objPath; 
 
@@ -1318,8 +1323,7 @@ namespace irods::handler
             auto* bbuf = get_pointer<bytesBuf_t>(_rule_arguments, 3);
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            const auto& instance_config = get_instance_config(_instance_configs, _instance_name);
-            const auto& attrs = instance_config.attributes();
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
             const auto& l1desc = irods::get_l1desc(input->l1descInx);
             const auto* path = l1desc.dataObjInfo->objPath;
 
