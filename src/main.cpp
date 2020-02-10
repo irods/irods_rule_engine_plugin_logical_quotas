@@ -118,12 +118,14 @@ namespace
         try {
             const auto get_prop = [](const json& _config, auto&& _name) -> std::string
             {
+                using name_type = decltype(_name);
+
                 try {
-                    return _config.at(_name).template get<std::string>();
+                    return _config.at(std::forward<name_type>(_name)).template get<std::string>();
                 }
                 catch (...) {
                     throw std::runtime_error{fmt::format("Logical Quotas Policy: Failed to find rule engine "
-                                                         "plugin configuration property [{}]", _name)};
+                                                         "plugin configuration property [{}]", std::forward<name_type>(_name))};
                 }
             };
 
