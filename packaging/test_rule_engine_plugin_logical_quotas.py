@@ -28,7 +28,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_control_rules(self):
-	config = IrodsConfig()
+        config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
@@ -70,7 +70,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_incorrect_config(self):
-	config = IrodsConfig()
+        config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
             config.server_config['log_level']['rule_engine'] = 'trace'
@@ -97,7 +97,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_put_data_object(self):
-	config = IrodsConfig()
+        config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
@@ -142,7 +142,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_put_collection(self):
-	config = IrodsConfig()
+        config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
@@ -189,7 +189,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_copy_data_object(self):
-	config = IrodsConfig()
+        config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
@@ -235,7 +235,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_copy_collection(self):
-	config = IrodsConfig()
+        config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
@@ -277,7 +277,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_rename_data_object(self):
-	config = IrodsConfig()
+        config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
@@ -347,7 +347,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_rename_collection(self):
-	config = IrodsConfig()
+        config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
@@ -395,7 +395,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_stream_data_object(self):
-	config = IrodsConfig()
+        config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
             self.enable_rule_engine_plugin(config)
@@ -415,9 +415,29 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             expected_size_in_bytes = len(contents)
             self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
 
+            # Trigger quota violation twice.
+            # This is a special case in that the catalog does not properly reflect the correct
+            # size of the data object and therefore, the REP must rely on dstream's seek operations
+            # to get the correct size of the data object. 
+            self.admin.assert_icommand_fail(['istream', 'write', data_object], input=contents + ' iRODS is great!')
+            self.admin.assert_icommand(['istream', 'read', data_object])
+            expected_number_of_objects = 1
+            expected_size_in_bytes = 0
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+
+            self.admin.assert_icommand_fail(['istream', 'write', data_object], input=contents + ' iRODS is great!')
+            self.admin.assert_icommand(['istream', 'read', data_object])
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+
+            # Restore the data object to it's original state.
+            self.admin.assert_icommand(['istream', 'write', data_object], input=contents)
+            self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', [contents])
+            expected_number_of_objects = 1
+            expected_size_in_bytes = len(contents)
+            self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+
             # Write in memory used by existing data object.
             # The current totals should not change.
-            self.admin.assert_icommand(['ils', '-l', data_object], 'STDOUT', [data_object])
             self.admin.assert_icommand(['istream', 'write', '-o', '7', '--no-trunc', data_object], input='iRODS!')
             self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, iRODS!'])
             self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
@@ -469,6 +489,31 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             self.logical_quotas_unset_maximum_number_of_data_objects(col)
             self.logical_quotas_unset_maximum_size_in_bytes(col)
             self.admin.assert_icommand(['imeta', 'ls', '-C', col], 'STDOUT', ['None'])
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_violation_during_recursive_put__issue_6(self):
+        config = IrodsConfig()
+        col = self.admin.session_collection
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+            self.logical_quotas_start_monitoring_collection(col)
+            self.logical_quotas_set_maximum_number_of_data_objects(col, 2)
+            self.logical_quotas_set_maximum_size_in_bytes(col, 100)
+
+            # Trigger quota violation and verify that an appropriate message is returned to the client.
+            dir_path = os.path.join(self.admin.local_session_dir, 'col.a')
+            self.make_directory(dir_path, ['foo', 'bar', 'baz'], file_size=1)
+            error_msg = 'Logical Quotas Policy Violation: Adding object exceeds maximum number of objects limit'
+            self.admin.assert_icommand_fail(['iput', '-r', dir_path], 'STDOUT', [error_msg])
+            self.admin.assert_icommand(['irm', '-rf', os.path.basename(dir_path)])
+
+            # Trigger quota violation and verify that an appropriate message is returned to the client.
+            dir_path = os.path.join(self.admin.local_session_dir, 'col.b')
+            self.make_directory(dir_path, ['foo', 'bar'], file_size=75)
+            error_msg = 'Logical Quotas Policy Violation: Adding object exceeds maximum data size in byteslimit'
+            self.admin.assert_icommand_fail(['iput', '-r', dir_path], 'STDOUT', [error_msg])
 
     #
     # Utility Functions

@@ -67,10 +67,6 @@ namespace
             for (; p_iter != p_last && c_iter != c_last && *p_iter == *c_iter; ++p_iter, ++c_iter);
 
             return (p_iter == p_last);
-
-            // XXX boost::starts_with(c_str(), c_str()) is actually faster, but is not used
-            // because it does not understand path objects. It is not enough to simply compare
-            // strings.
         }
 
     private:
@@ -694,7 +690,7 @@ namespace irods::handler
 
             if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
                 data_objects_ = 1;
-                size_in_bytes_ = fs::server::data_object_size(conn, input->srcDataObjInp.objPath);
+                size_in_bytes_ = size_on_disk(conn, input->srcDataObjInp.objPath);
             }
             else if (fs::server::is_collection(status)) {
                 std::tie(data_objects_, size_in_bytes_) = compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
@@ -703,7 +699,7 @@ namespace irods::handler
                 throw logical_quotas_error{"Logical Quotas Policy: Invalid object type", SYS_INTERNAL_ERR};
             }
 
-            for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs, input](auto& _collection, const auto& _info) {
+            for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs](auto& _collection, const auto& _info) {
                 throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
                 throw_if_maximum_size_in_bytes_violation(attrs, _info, size_in_bytes_);
             });
@@ -731,7 +727,7 @@ namespace irods::handler
             auto& conn = *rei.rsComm;
             const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
-            for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
+            for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs](const auto& _collection, const auto& _info) {
                 update_data_object_count_and_size(conn, attrs, _collection, _info, data_objects_, size_in_bytes_);
             });
         }
@@ -814,7 +810,7 @@ namespace irods::handler
 
             if (fs::server::exists(*rei.rsComm, input->objPath)) {
                 forced_overwrite_ = true;
-                const size_type existing_size = fs::server::data_object_size(conn, input->objPath);
+                const size_type existing_size = size_on_disk(conn, input->objPath);
                 size_diff_ = static_cast<size_type>(input->dataSize) - existing_size;
 
                 for_each_monitored_collection(conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, auto& _info) {
@@ -898,7 +894,7 @@ namespace irods::handler
 
             if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
                 data_objects_ = 1;
-                size_in_bytes_ = fs::server::data_object_size(conn, input->srcDataObjInp.objPath);
+                size_in_bytes_ = size_on_disk(conn, input->srcDataObjInp.objPath);
             }
             else if (fs::server::is_collection(status)) {
                 std::tie(data_objects_, size_in_bytes_) = compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
@@ -1068,7 +1064,7 @@ namespace irods::handler
             const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             if (auto collection = get_monitored_parent_collection(conn, attrs, input->objPath); collection) {
-                size_in_bytes_ = fs::server::data_object_size(conn, input->objPath);
+                size_in_bytes_ = size_on_disk(conn, input->objPath);
             }
         }
         catch (const std::exception& e) {
@@ -1134,7 +1130,7 @@ namespace irods::handler
             // the metadata and reflect that the data object has been truncated.
             else if (O_TRUNC == (input->openFlags & O_TRUNC)) {
                 data_objects_ = 0;
-                size_in_bytes_ = static_cast<size_type>(fs::server::data_object_size(conn, input->objPath));
+                size_in_bytes_ = size_on_disk(conn, input->objPath);
             }
         }
         catch (const logical_quotas_error& e) {
@@ -1177,7 +1173,7 @@ namespace irods::handler
             // If the client requested append and NOT truncate, then set the size
             // equal to the size of the data object.
             if (O_APPEND == (input->openFlags & (O_APPEND | O_TRUNC))) {
-                fpos = fs::server::data_object_size(conn, input->objPath);
+                fpos = size_on_disk(conn, input->objPath);
             }
 
             fpos_map.insert_or_assign(make_unique_id(input->objPath), fpos);
@@ -1215,7 +1211,7 @@ namespace irods::handler
             //
             // TODO Updating the catalog to reflect O_TRUNC is mandatory and should happen in 4.2.8.
             // 
-            // For now, we can use dstream::seekg/tellg to retreive the real size of the data object
+            // For now, we can use dstream::seekg/tellg to retrieve the real size of the data object
             // as it is being written to.
             const auto size = size_on_disk(conn, l1desc.dataObjInfo->objPath);
 

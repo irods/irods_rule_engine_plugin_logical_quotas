@@ -139,7 +139,7 @@ namespace
                         }
                         catch (...) {
                             throw std::runtime_error{fmt::format("Logical Quotas Policy: Failed to find rule engine "
-                                                                 "plugin configuration property [metadata_attribute_name]")};
+                                                                 "plugin configuration property [metadata_attribute_names]")};
                         }
                     }();
 
