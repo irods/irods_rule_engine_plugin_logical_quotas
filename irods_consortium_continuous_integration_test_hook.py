@@ -66,7 +66,7 @@ def main():
     built_packages_root_directory = options.built_packages_root_directory
     package_suffix = irods_python_ci_utilities.get_package_suffix()
     os_specific_directory = irods_python_ci_utilities.append_os_specific_directory(built_packages_root_directory)
-    irods_python_ci_utilities.install_os_packages_from_files(glob.glob(os.path.join(os_specific_directory, 'irods-rule-engine-plugin-update-collection-mtime*.{0}'.format(package_suffix))))
+    irods_python_ci_utilities.install_os_packages_from_files(glob.glob(os.path.join(os_specific_directory, 'irods-rule-engine-plugin-logical-quotas*.{0}'.format(package_suffix))))
 
     irods_python_ci_utilities.install_irods_core_dev_repository()
 
@@ -74,7 +74,7 @@ def main():
 
     try:
         test_output_file = 'log/test_output.log'
-        irods_python_ci_utilities.subprocess_get_output(['sudo', 'su', '-', 'irods', '-c', 'python2 scripts/run_tests.py --xml_output --run_s test_rule_engine_plugin_update_collection_mtime 2>&1 | tee {0}; exit $PIPESTATUS'.format(test_output_file)], check_rc=True)
+        irods_python_ci_utilities.subprocess_get_output(['sudo', 'su', '-', 'irods', '-c', 'python2 scripts/run_tests.py --xml_output --run_s test_rule_engine_plugin_logical_quotas 2>&1 | tee {0}; exit $PIPESTATUS'.format(test_output_file)], check_rc=True)
     finally:
         if output_root_directory:
             irods_python_ci_utilities.gather_files_satisfying_predicate('/var/lib/irods/log', output_root_directory, lambda x: True)
