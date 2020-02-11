@@ -12,12 +12,12 @@ def install_cmake_and_add_to_front_of_path():
     os.environ['PATH'] = '/opt/irods-externals/cmake3.11.4-0/bin' + os.pathsep + os.environ['PATH']
 
 def get_build_prerequisites_all():
-    return ['irods-externals-clang3.8-0',
-            'irods-externals-libarchive3.3.2-0',
-            'irods-externals-avro1.7.7-0',
-            'irods-externals-clang-runtime3.8-0',
-            'irods-externals-boost1.60.0-0',
-            'irods-externals-jansson2.7-0']
+    return ['irods-externals-clang6.0-0',
+            'irods-externals-libarchive3.3.2-1',
+            'irods-externals-avro1.9.0-0',
+            'irods-externals-clang-runtime6.0-0',
+            'irods-externals-boost1.67.0-0',
+            'irods-externals-json3.7.3-0']
 
 def get_build_prerequisites_apt():
     return ['make', 'gcc'] + get_build_prerequisites_all()
@@ -81,7 +81,7 @@ def main(output_root_directory, irods_packages_root_directory):
     install_build_prerequisites()
     if irods_packages_root_directory:
         install_irods_dev_and_runtime_packages(irods_packages_root_directory)
-    build_directory = tempfile.mkdtemp(prefix='irods_update_collection_mtime_plugin_build_directory')
+    build_directory = tempfile.mkdtemp(prefix='irods_logical_quotas_plugin_build_directory')
     irods_python_ci_utilities.subprocess_get_output(['cmake', os.path.dirname(os.path.realpath(__file__))], check_rc=True, cwd=build_directory)
     irods_python_ci_utilities.subprocess_get_output(['make', '-j', str(multiprocessing.cpu_count()), 'package'], check_rc=True, cwd=build_directory)
     if output_root_directory:
