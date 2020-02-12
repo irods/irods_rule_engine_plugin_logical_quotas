@@ -1,10 +1,11 @@
 # iRODS Rule Engine Plugin - Logical Quotas
 
 ## Requirements
-- iRODS v4.2.6+
+- iRODS v4.2.8+
 - irods-dev package
 - irods-runtime package
 - irods-externals-boost package
+- irods-externals-json package
 
 ## Compiling
 ```bash

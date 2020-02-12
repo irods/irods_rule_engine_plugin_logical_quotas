@@ -4,6 +4,3 @@
 [submodule "spdlog"]
 	path = spdlog
 	url = https://github.com/gabime/spdlog
-[submodule "json"]
-	path = json
-	url = https://github.com/nlohmann/json

@@ -32,7 +32,7 @@ namespace
                                                     std::list<boost::any>&,
                                                     irods::callback&)>;
 
-    using handler_map_type = std::map<std::string, handler_type>;
+    using handler_map_type = std::map<std::string_view, handler_type>;
 
     const handler_map_type logical_quotas_handlers{
         {"logical_quotas_count_total_number_of_data_objects",   handler::logical_quotas_count_total_number_of_data_objects},
@@ -49,25 +49,28 @@ namespace
     };
 
     const handler_map_type pep_handlers{
-        {"pep_api_data_obj_copy_post",            handler::pep_api_data_obj_copy_post},
-        {"pep_api_data_obj_copy_pre",             handler::pep_api_data_obj_copy_pre},
+        {"pep_api_data_obj_close_post",           handler::pep_api_data_obj_close::post},
+        {"pep_api_data_obj_close_pre",            handler::pep_api_data_obj_close::pre},
+        {"pep_api_data_obj_copy_post",            handler::pep_api_data_obj_copy::post},
+        {"pep_api_data_obj_copy_pre",             handler::pep_api_data_obj_copy::pre},
         {"pep_api_data_obj_create_and_stat_post", handler::pep_api_data_obj_create_post},
         {"pep_api_data_obj_create_and_stat_pre",  handler::pep_api_data_obj_create_pre},
         {"pep_api_data_obj_create_post",          handler::pep_api_data_obj_create_post},
         {"pep_api_data_obj_create_pre",           handler::pep_api_data_obj_create_pre},
+        {"pep_api_data_obj_lseek_post",           handler::pep_api_data_obj_lseek::post},
+        {"pep_api_data_obj_lseek_pre",            handler::pep_api_data_obj_lseek::pre},
         {"pep_api_data_obj_open_and_stat_post",   handler::pep_api_data_obj_open::post},
         {"pep_api_data_obj_open_and_stat_pre",    handler::pep_api_data_obj_open::pre},
         {"pep_api_data_obj_open_post",            handler::pep_api_data_obj_open::post},
         {"pep_api_data_obj_open_pre",             handler::pep_api_data_obj_open::pre},
         {"pep_api_data_obj_put_post",             handler::pep_api_data_obj_put::post},
         {"pep_api_data_obj_put_pre",              handler::pep_api_data_obj_put::pre},
-        {"pep_api_data_obj_rename_post",          handler::pep_api_data_obj_rename_post},
-        {"pep_api_data_obj_rename_pre",           handler::pep_api_data_obj_rename_pre},
+        {"pep_api_data_obj_rename_post",          handler::pep_api_data_obj_rename::post},
+        {"pep_api_data_obj_rename_pre",           handler::pep_api_data_obj_rename::pre},
         {"pep_api_data_obj_unlink_post",          handler::pep_api_data_obj_unlink::post},
         {"pep_api_data_obj_unlink_pre",           handler::pep_api_data_obj_unlink::pre},
         {"pep_api_data_obj_write_post",           handler::pep_api_data_obj_write::post},
         {"pep_api_data_obj_write_pre",            handler::pep_api_data_obj_write::pre},
-        {"pep_api_mod_avu_metadata_pre",          handler::pep_api_mod_avu_metadata_pre},
         {"pep_api_rm_coll_post",                  handler::pep_api_rm_coll::post},
         {"pep_api_rm_coll_pre",                   handler::pep_api_rm_coll::pre}
     };
@@ -84,15 +87,15 @@ namespace
     {
         std::string config_path;
 
-        auto error = irods::get_full_path_for_config_file("server_config.json", config_path);
-
-        if (!error.ok()) {
-            const char* msg = "Server configuration not found";
+        if (auto error = irods::get_full_path_for_config_file("server_config.json", config_path);
+            !error.ok())
+        {
+            const char* msg = "[logical_quotas] Server configuration not found";
             rodsLog(LOG_ERROR, msg);
             return ERROR(SYS_CONFIG_FILE_ERR, msg);
         }
 
-        rodsLog(LOG_DEBUG, "Reading plugin configuration ...");
+        rodsLog(LOG_DEBUG, "[logical_quotas] Reading plugin configuration ...");
 
         json config;
 
@@ -102,25 +105,47 @@ namespace
         }
 
         try {
+            const auto get_prop = [](const json& _config, auto&& _name) -> std::string
+            {
+                using name_type = decltype(_name);
+
+                try {
+                    return _config.at(std::forward<name_type>(_name)).template get<std::string>();
+                }
+                catch (...) {
+                    throw std::runtime_error{fmt::format("Logical Quotas Policy: Failed to find rule engine "
+                                                         "plugin configuration property [{}]", std::forward<name_type>(_name))};
+                }
+            };
+
             for (const auto& re : config.at(irods::CFG_PLUGIN_CONFIGURATION_KW).at(irods::PLUGIN_TYPE_RULE_ENGINE)) {
                 if (_instance_name == re.at(irods::CFG_INSTANCE_NAME_KW).get<std::string>()) {
                     const auto& plugin_config = re.at(irods::CFG_PLUGIN_SPECIFIC_CONFIGURATION_KW);
-                    const auto& attr_names = plugin_config.at("metadata_attribute_names");
 
-                    irods::instance_configuration instance_config{{plugin_config.at("namespace").get<std::string>(),
-                                                                   attr_names.at("maximum_number_of_data_objects").get<std::string>(),
-                                                                   attr_names.at("maximum_size_in_bytes").get<std::string>(),
-                                                                   attr_names.at("total_number_of_data_objects").get<std::string>(),
-                                                                   attr_names.at("total_size_in_bytes").get<std::string>()}};
+                    const auto& attr_names = [&plugin_config] {
+                        try {
+                            return plugin_config.at("metadata_attribute_names");
+                        }
+                        catch (...) {
+                            throw std::runtime_error{fmt::format("Logical Quotas Policy: Failed to find rule engine "
+                                                                 "plugin configuration property [metadata_attribute_names]")};
+                        }
+                    }();
 
-                    instance_configs.insert({_instance_name, instance_config});
+                    irods::instance_configuration instance_config{{get_prop(plugin_config, "namespace"),
+                                                                   get_prop(attr_names, "maximum_number_of_data_objects"),
+                                                                   get_prop(attr_names, "maximum_size_in_bytes"),
+                                                                   get_prop(attr_names, "total_number_of_data_objects"),
+                                                                   get_prop(attr_names, "total_size_in_bytes")}};
+
+                    instance_configs.insert_or_assign(_instance_name, instance_config);
 
                     return SUCCESS();
                 }
             }
         }
         catch (const std::exception& e) {
-            rodsLog(LOG_ERROR, e.what());
+            rodsLog(LOG_ERROR, "[logical_quotas] Bad rule engine plugin configuration");
             return ERROR(SYS_CONFIG_FILE_ERR, e.what());
         }
 
@@ -157,22 +182,20 @@ namespace
                    std::list<boost::any>& _rule_arguments,
                    irods::callback _effect_handler) -> irods::error
     {
-        const auto iter = pep_handlers.find(_rule_name);
-        
-        if (iter != std::end(pep_handlers)) {
+        if (const auto iter = pep_handlers.find(_rule_name); iter != std::end(pep_handlers)) {
             return (iter->second)(_instance_name, instance_configs, _rule_arguments, _effect_handler);
         }
 
-        rodsLog(LOG_ERROR, "Rule not supported in rule engine plugin [rule => %s]", _rule_name.c_str());
+        rodsLog(LOG_ERROR, "[logical_quotas] Rule not supported in rule engine plugin [rule => %s]", _rule_name.c_str());
 
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
     auto exec_rule_text_impl(const std::string& _instance_name,
-                             std::string _rule_text,
+                             std::string_view _rule_text,
                              irods::callback _effect_handler) -> irods::error
     {
-        rodsLog(LOG_DEBUG, "_rule_text (before) = %s", _rule_text.c_str());
+        rodsLog(LOG_DEBUG, "[logical_quotas] _rule_text => %s", _rule_text.data());
 
         // irule <text>
         if (_rule_text.find("@external rule {") != std::string::npos) {
@@ -185,17 +208,16 @@ namespace
             _rule_text = _rule_text.substr(start, _rule_text.rfind(" }") - start);
         }
 
-        rodsLog(LOG_DEBUG, "_rule_text (after) = %s", _rule_text.c_str());
+        rodsLog(LOG_DEBUG, "[logical_quotas] _rule_text => %s", std::string{_rule_text}.data());
 
         try {
             const auto json_args = json::parse(_rule_text);
 
-            rodsLog(LOG_DEBUG, "json_arguments => %s", json_args.dump().c_str());
+            rodsLog(LOG_DEBUG, "[logical_quotas] json_arguments => %s", json_args.dump().data());
 
             const auto op = json_args.at("operation").get<std::string>();
-            const auto iter = logical_quotas_handlers.find(op);
-            
-            if (iter != std::end(logical_quotas_handlers)) {
+
+            if (const auto iter = logical_quotas_handlers.find(op); iter != std::end(logical_quotas_handlers)) {
                 std::list<boost::any> args{json_args.at("collection").get<std::string>() };
 
                 if (op == "logical_quotas_set_maximum_number_of_data_objects" ||
@@ -210,19 +232,19 @@ namespace
             return ERROR(INVALID_OPERATION, fmt::format("Invalid operation [{}]", op));
         }
         catch (const json::parse_error& e) {
-            rodsLog(LOG_ERROR, e.what());
+            rodsLog(LOG_ERROR, "[logical_quotas] error => %s", e.what());
             return ERROR(USER_INPUT_FORMAT_ERR, e.what());
         }
         catch (const json::type_error& e) {
-            rodsLog(LOG_ERROR, e.what());
+            rodsLog(LOG_ERROR, "[logical_quotas] error => %s", e.what());
             return ERROR(SYS_INTERNAL_ERR, e.what());
         }
         catch (const std::exception& e) {
-            rodsLog(LOG_ERROR, e.what());
+            rodsLog(LOG_ERROR, "[logical_quotas] error => %s", e.what());
             return ERROR(SYS_INTERNAL_ERR, e.what());
         }
         catch (...) {
-            rodsLog(LOG_ERROR, "Unknown error");
+            rodsLog(LOG_ERROR, "[logical_quotas] Unknown error");
             return ERROR(SYS_UNKNOWN_ERROR, "Unknown error");
         }
     }
