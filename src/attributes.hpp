@@ -1,7 +1,7 @@
 #ifndef IRODS_LOGICAL_QUOTAS_ATTRIBUTES_HPP
 #define IRODS_LOGICAL_QUOTAS_ATTRIBUTES_HPP
 
-#include <fmt/format.h>
+#include "fmt/format.h"
 
 #include <string>
 

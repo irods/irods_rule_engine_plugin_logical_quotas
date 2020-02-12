@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.7.0 FATAL_ERROR)
 
-find_package(IRODS REQUIRED)
+find_package(IRODS 4.2.8 EXACT REQUIRED)
+
+set(IRODS_PLUGIN_REVISION "0")
 
 set(CMAKE_C_COMPILER ${IRODS_EXTERNALS_FULLPATH_CLANG}/bin/clang)
 set(CMAKE_CXX_COMPILER ${IRODS_EXTERNALS_FULLPATH_CLANG}/bin/clang++)
@@ -34,27 +36,28 @@ set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -stdlib=libc++ -Wl,-
 
 set(PLUGIN irods_rule_engine_plugin-logical_quotas)
 
-set(PLUGIN_VERSION_MAJOR 1)
-set(PLUGIN_VERSION_MINOR 0)
-set(PLUGIN_VERSION_PATCH 0)
-set(PLUGIN_VERSION "${PLUGIN_VERSION_MAJOR}.${PLUGIN_VERSION_MINOR}.${PLUGIN_VERSION_PATCH}")
-
 add_library(${PLUGIN} MODULE ${CMAKE_SOURCE_DIR}/src/main.cpp
                              ${CMAKE_SOURCE_DIR}/src/handler.cpp)
+
 set_target_properties(${PLUGIN} PROPERTIES CXX_STANDARD ${IRODS_CXX_STANDARD})
+
 target_compile_options(${PLUGIN} PRIVATE -Wno-write-strings -nostdinc++)
+
 target_compile_definitions(${PLUGIN} PRIVATE ${IRODS_COMPILE_DEFINITIONS}
                                              RODS_SERVER
                                              IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
+                                             IRODS_IO_TRANSPORT_ENABLE_SERVER_SIDE_API
                                              FMT_HEADER_ONLY
                                              SPDLOG_FMT_EXTERNAL)
+
 target_include_directories(${PLUGIN} PRIVATE ${CMAKE_SOURCE_DIR}/fmt/include
-                                             ${CMAKE_SOURCE_DIR}/json/single_include/nlohmann
                                              ${CMAKE_SOURCE_DIR}/spdlog/include
                                              ${CMAKE_SOURCE_DIR}/spdlog/include/spdlog
                                              ${IRODS_INCLUDE_DIRS}
                                              ${IRODS_EXTERNALS_FULLPATH_CLANG}/include/c++/v1
-                                             ${IRODS_EXTERNALS_FULLPATH_BOOST}/include)
+                                             ${IRODS_EXTERNALS_FULLPATH_BOOST}/include
+                                             ${IRODS_EXTERNALS_FULLPATH_JSON}/include)
+
 target_link_libraries(${PLUGIN} PRIVATE irods_server
                                         irods_common
                                         ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_filesystem.so
@@ -74,20 +77,11 @@ install(FILES ${CMAKE_SOURCE_DIR}/packaging/run_logical_quotas_test.py
 
 set(PLUGIN_PACKAGE_NAME irods-rule-engine-plugin-logical-quotas)
 
-set(IRODS_PLUGIN_VERSION_MAJOR ${PLUGIN_VERSION_MAJOR})
-set(IRODS_PLUGIN_VERSION_MINOR ${PLUGIN_VERSION_MINOR})
-set(IRODS_PLUGIN_VERSION_PATCH ${PLUGIN_VERSION_PATCH})
-set(IRODS_PLUGIN_VERSION "${IRODS_PLUGIN_VERSION_MAJOR}.${IRODS_PLUGIN_VERSION_MINOR}.${IRODS_PLUGIN_VERSION_PATCH}")
-
-set(CPACK_PACKAGE_FILE_NAME "${PLUGIN_PACKAGE_NAME}-${IRODS_PLUGIN_VERSION}-${IRODS_LINUX_DISTRIBUTION_NAME}${IRODS_LINUX_DISTRIBUTION_VERSION_MAJOR}-${CMAKE_SYSTEM_PROCESSOR}")
-
+set(CPACK_PACKAGE_VERSION ${IRODS_VERSION}.${IRODS_PLUGIN_REVISION})
+set(CPACK_PACKAGE_FILE_NAME "${PLUGIN_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${IRODS_LINUX_DISTRIBUTION_NAME}${IRODS_LINUX_DISTRIBUTION_VERSION_MAJOR}-${CMAKE_SYSTEM_PROCESSOR}")
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 set(CPACK_COMPONENT_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 set(CPACK_COMPONENTS_GROUPING IGNORE)
-set(CPACK_PACKAGE_VERSION ${IRODS_PLUGIN_VERSION})
-set(CPACK_PACKAGE_VERSION_MAJOR ${IRODS_PLUGIN_VERSION_MAJOR})
-set(CPACK_PACKAGE_VERSION_MINOR ${IRODS_PLUGIN_VERSION_MINOR})
-set(CPACK_PACKAGE_VERSION_PATCH ${IRODS_PLUGIN_VERSION_PATCH})
 set(CPACK_PACKAGE_CONTACT "Renaissance Computing Institute <info@irods.org>")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "The integrated Rule-Oriented Data System")
 set(CPACK_PACKAGE_VENDOR "Renaissance Computing Institute <info@irods.org>")
@@ -114,7 +108,6 @@ set(CPACK_RPM_PACKAGE_OBSOLETES ${PLUGIN_PACKAGE_NAME})
 set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE "${CMAKE_SOURCE_DIR}/packaging/postinst")
 
 set(CPACK_ARCHIVE_COMPONENT_INSTALL OFF)
-
 
 set(CPACK_DEBIAN_PACKAGE_NAME ${PLUGIN_PACKAGE_NAME})
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "${IRODS_PACKAGE_DEPENDENCIES_STRING}, irods-server (= ${IRODS_VERSION}), irods-runtime (= ${IRODS_VERSION}), libc6")
