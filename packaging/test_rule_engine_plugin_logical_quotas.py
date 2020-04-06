@@ -38,8 +38,8 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
             sandbox = self.admin.session_collection
             self.logical_quotas_start_monitoring_collection(sandbox)
-            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, 2)
-            self.logical_quotas_set_maximum_size_in_bytes(sandbox, 15)
+            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, '2')
+            self.logical_quotas_set_maximum_size_in_bytes(sandbox, '15')
 
             # Set the totals to incorrect values.
             self.admin.assert_icommand(['imeta', 'set', '-C', sandbox, self.total_number_of_data_objects_attribute(), '100'])
@@ -104,8 +104,8 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
             sandbox = self.admin.session_collection
             self.logical_quotas_start_monitoring_collection(sandbox)
-            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, 2)
-            self.logical_quotas_set_maximum_size_in_bytes(sandbox, 15)
+            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, '2')
+            self.logical_quotas_set_maximum_size_in_bytes(sandbox, '15')
 
             # Put a data object. This should not exceed any quotas.
             file_size = 4
@@ -149,7 +149,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
             sandbox = self.admin.session_collection
             self.logical_quotas_start_monitoring_collection(sandbox)
-            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, 1)
+            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, '1')
 
             dir_path = os.path.join(self.admin.local_session_dir, 'coll.d')
             dir_name = os.path.basename(dir_path)
@@ -163,13 +163,13 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
 
             # Test: Exceed the max number of bytes and show that the current totals are correct.
-            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, 100)
-            self.logical_quotas_set_maximum_size_in_bytes(sandbox, 1)
+            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, '100')
+            self.logical_quotas_set_maximum_size_in_bytes(sandbox, '1')
             self.admin.assert_icommand_fail(['iput', '-rf', dir_path])
             self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
 
             # Test: No quota violations on put of a non-empty collection.
-            self.logical_quotas_set_maximum_size_in_bytes(sandbox, 100)
+            self.logical_quotas_set_maximum_size_in_bytes(sandbox, '100')
             self.admin.assert_icommand(['iput', '-rf', dir_path], 'STDOUT', ['pre-scan'])
             expected_number_of_objects = 3
             expected_size_in_bytes = 60
@@ -196,15 +196,15 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
             col1 = self.admin.session_collection
             self.logical_quotas_start_monitoring_collection(col1)
-            self.logical_quotas_set_maximum_number_of_data_objects(col1, 4)
-            self.logical_quotas_set_maximum_size_in_bytes(col1, 100)
+            self.logical_quotas_set_maximum_number_of_data_objects(col1, '4')
+            self.logical_quotas_set_maximum_size_in_bytes(col1, '100')
 
             # "col2" is a child collection of "col1".
             col2 = os.path.join(col1, 'col.d')
             self.admin.assert_icommand(['imkdir', col2])
             self.logical_quotas_start_monitoring_collection(col2)
-            self.logical_quotas_set_maximum_number_of_data_objects(col2, 1)
-            self.logical_quotas_set_maximum_size_in_bytes(col2, 100)
+            self.logical_quotas_set_maximum_number_of_data_objects(col2, '1')
+            self.logical_quotas_set_maximum_size_in_bytes(col2, '100')
 
             # Put a data object into "col1".
             data_object = 'foo.txt'
@@ -249,8 +249,8 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             # Monitor first collection.
             col1 = os.path.join(self.admin.session_collection, 'col.a')
             self.logical_quotas_start_monitoring_collection(col1)
-            self.logical_quotas_set_maximum_number_of_data_objects(col1, 4)
-            self.logical_quotas_set_maximum_size_in_bytes(col1, 100)
+            self.logical_quotas_set_maximum_number_of_data_objects(col1, '4')
+            self.logical_quotas_set_maximum_size_in_bytes(col1, '100')
             expected_number_of_objects = 1
             expected_size_in_bytes = file_size
             self.assert_quotas(col1, expected_number_of_objects, expected_size_in_bytes)
@@ -259,8 +259,8 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             col2 = os.path.join(self.admin.session_collection, 'col.b')
             self.admin.assert_icommand(['imkdir', col2])
             self.logical_quotas_start_monitoring_collection(col2)
-            self.logical_quotas_set_maximum_number_of_data_objects(col2, 4)
-            self.logical_quotas_set_maximum_size_in_bytes(col2, 100)
+            self.logical_quotas_set_maximum_number_of_data_objects(col2, '4')
+            self.logical_quotas_set_maximum_size_in_bytes(col2, '100')
 
             # Copy "col1" into "col2".
             data_object = os.path.join(col1, 'foo.txt')
@@ -284,22 +284,22 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
             col1 = self.admin.session_collection
             self.logical_quotas_start_monitoring_collection(col1)
-            self.logical_quotas_set_maximum_number_of_data_objects(col1, 4)
-            self.logical_quotas_set_maximum_size_in_bytes(col1, 100)
+            self.logical_quotas_set_maximum_number_of_data_objects(col1, '4')
+            self.logical_quotas_set_maximum_size_in_bytes(col1, '100')
 
             # "col2" is a child collection of "col1".
             col2 = os.path.join(col1, 'col.d')
             self.admin.assert_icommand(['imkdir', col2])
             self.logical_quotas_start_monitoring_collection(col2)
-            self.logical_quotas_set_maximum_number_of_data_objects(col2, 1)
-            self.logical_quotas_set_maximum_size_in_bytes(col2, 100)
+            self.logical_quotas_set_maximum_number_of_data_objects(col2, '1')
+            self.logical_quotas_set_maximum_size_in_bytes(col2, '100')
 
             # "col3" is a sibling collection to "col2".
             col3 = os.path.join(col1, 'col.e')
             self.admin.assert_icommand(['imkdir', col3])
             self.logical_quotas_start_monitoring_collection(col3)
-            self.logical_quotas_set_maximum_number_of_data_objects(col3, 4)
-            self.logical_quotas_set_maximum_size_in_bytes(col3, 100)
+            self.logical_quotas_set_maximum_number_of_data_objects(col3, '4')
+            self.logical_quotas_set_maximum_size_in_bytes(col3, '100')
 
             # Put a data object into "col1".
             data_object = 'foo.txt'
@@ -355,15 +355,15 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             col1 = os.path.join(self.admin.session_collection, 'col.a')
             self.admin.assert_icommand(['imkdir', col1])
             self.logical_quotas_start_monitoring_collection(col1)
-            self.logical_quotas_set_maximum_number_of_data_objects(col1, 1)
-            self.logical_quotas_set_maximum_size_in_bytes(col1, 100)
+            self.logical_quotas_set_maximum_number_of_data_objects(col1, '1')
+            self.logical_quotas_set_maximum_size_in_bytes(col1, '100')
 
             # "col2" is a sibling collection to "col1".
             col2 = os.path.join(self.admin.session_collection, 'col.b')
             self.admin.assert_icommand(['imkdir', col2])
             self.logical_quotas_start_monitoring_collection(col2)
-            self.logical_quotas_set_maximum_number_of_data_objects(col2, 1)
-            self.logical_quotas_set_maximum_size_in_bytes(col2, 100)
+            self.logical_quotas_set_maximum_number_of_data_objects(col2, '1')
+            self.logical_quotas_set_maximum_size_in_bytes(col2, '100')
 
             # Put a data object into "col1".
             data_object = os.path.join(col1, 'foo.txt')
@@ -402,8 +402,8 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
             sandbox = self.admin.session_collection
             self.logical_quotas_start_monitoring_collection(sandbox)
-            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, 10)
-            self.logical_quotas_set_maximum_size_in_bytes(sandbox, len('hello, world!'))
+            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, '10')
+            self.logical_quotas_set_maximum_size_in_bytes(sandbox, str(len('hello, world!')))
 
             data_object = 'foo.txt'
 
@@ -475,8 +475,8 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             self.admin.assert_icommand(['imeta', 'ls', '-C', col], 'STDOUT', [self.total_number_of_data_objects_attribute(),
                                                                               self.total_size_in_bytes_attribute()])
 
-            self.logical_quotas_set_maximum_number_of_data_objects(col, 100)
-            self.logical_quotas_set_maximum_size_in_bytes(col, 10000)
+            self.logical_quotas_set_maximum_number_of_data_objects(col, '100')
+            self.logical_quotas_set_maximum_size_in_bytes(col, '10000')
             self.admin.assert_icommand(['imeta', 'ls', '-C', col], 'STDOUT', [self.total_number_of_data_objects_attribute(),
                                                                               self.total_size_in_bytes_attribute(),
                                                                               self.maximum_number_of_data_objects_attribute(),
@@ -499,8 +499,8 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
             self.enable_rule_engine_plugin(config)
 
             self.logical_quotas_start_monitoring_collection(col)
-            self.logical_quotas_set_maximum_number_of_data_objects(col, 2)
-            self.logical_quotas_set_maximum_size_in_bytes(col, 100)
+            self.logical_quotas_set_maximum_number_of_data_objects(col, '2')
+            self.logical_quotas_set_maximum_size_in_bytes(col, '100')
 
             # Trigger quota violation and verify that an appropriate message is returned to the client.
             dir_path = os.path.join(self.admin.local_session_dir, 'col.a')
