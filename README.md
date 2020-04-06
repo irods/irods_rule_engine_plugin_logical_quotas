@@ -63,32 +63,55 @@ still be allowed to process the same PEPs without any issues.
 ```
 
 ## How To Use
-Convenience scripts are available under the `<repo>/scripts` directory.
+The following operations are supported:
+- logical_quotas_count_total_number_of_data_objects
+- logical_quotas_count_total_size_in_bytes
+- logical_quotas_recalculate_totals
+- logical_quotas_set_maximum_number_of_data_objects
+- logical_quotas_set_maximum_size_in_bytes
+- logical_quotas_start_monitoring_collection
+- logical_quotas_stop_monitoring_collection
+- logical_quotas_unset_maximum_number_of_data_objects
+- logical_quotas_unset_maximum_size_in_bytes
+- logical_quotas_unset_total_number_of_data_objects
+- logical_quotas_unset_total_size_in_bytes
 
-To use it, you will first need to edit the `<rule_file.r>` files. Within these files, you'll need to set the
-collection along with any other properties that are important to your deployment. You should only need to modify
-the `collection` property (and `value` property if listed) within the rule files.
+### Invoking operations via the Plugin
+To invoke an operation through the plugin, JSON must be passed using the following structure:
+```javascript
+{
+    // One of the operations listed above.
+    "operation": "<value>",
 
-Once you've updated the rule files, navigate to the **scripts** directory and run `./lq_cmd.sh <rule_file.r>` to
-execute the operation.
+    // The absolute logical path of an existing collection.
+    "collection": "<value>",
 
-For example, to start monitoring a collection, you'd do the following:
-```bash
-$ vim start_monitoring.r             # Set the collection.
-$ ./lq_cmd.sh start_monitoring.r     # Execute the rule file.
-$ imeta ls -C <path/to/collection>   # Verify that the metadata is set.
+    // This value is only used by "logical_quotas_set_maximum_number_of_data_objects" and
+    // "logical_quotas_set_maximum_size_in_bytes". This is expected to be an integer
+    // passed in as a string.
+    "value": "<value>"
+}
 ```
 
-The following operations are available:
-- start_monitoring
-- stop_monitoring
-- set_maximum_number_of_data_objects
-- set_maximum_size_in_bytes
-- recalculate_totals
-- count_total_number_of_data_objects
-- count_total_size_in_bytes
-- unset_maximum_number_of_data_objects
-- unset_maximum_size_in_bytes
-- unset_total_number_of_data_objects
-- unset_total_size_in_bytes
+Use `irule` to execute an operation. For example, we can start monitoring a collection by running the following:
+```bash
+$ irule -r irods_rule_engine_plugin-logical_quotas-instance '{"operation": "logical_quotas_start_monitoring_collection", "collection": "/tempZone/home/rods"}' null ruleExecOut
+```
+
+We can set a maximum limit on the number of data objects by running the following:
+```bash
+$ irule -r irods_rule_engine_plugin-logical_quotas-instance '{"operation": "logical_quotas_set_maximum_number_of_data_objects", "collection": "/tempZone/home/rods", "value": "100"}' null ruleExecOut
+```
+If no errors occurred, then `/tempZone/home/rods` will only be allowed to contain 100 data objects. However, Logical
+Quotas does not guarantee that the numbers produced perfectly reflect the total number of data objects under a collection.
+Logical Quotas only provides a relative value assuming there are many clients accessing the system simultaneously.
+
+To help with this situation, `logical_quotas_recalculate_totals` is provided. This operation can be scheduled
+to run periodically to keep the numbers as accurate as possible.
+
+### Invoking operations via the Native Rule Language
+Here, we demonstrate how to start monitoring a collection just like in the section above.
+```bash
+$ irule -r irods_rule_engine_plugin-irods_rule_language-instance 'logical_quotas_start_monitoring_collection(*col)' '*col=/tempZone/home/rods' ruleExecOut
+```
 
