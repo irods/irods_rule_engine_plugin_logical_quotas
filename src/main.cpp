@@ -186,6 +186,10 @@ namespace
             return (iter->second)(_instance_name, instance_configs, _rule_arguments, _effect_handler);
         }
 
+        if (const auto iter = logical_quotas_handlers.find(_rule_name); iter != std::end(logical_quotas_handlers)) {
+            return (iter->second)(_instance_name, instance_configs, _rule_arguments, _effect_handler);
+        }
+
         rodsLog(LOG_ERROR, "[logical_quotas] Rule not supported in rule engine plugin [rule => %s]", _rule_name.c_str());
 
         return CODE(RULE_ENGINE_CONTINUE);
@@ -218,12 +222,16 @@ namespace
             const auto op = json_args.at("operation").get<std::string>();
 
             if (const auto iter = logical_quotas_handlers.find(op); iter != std::end(logical_quotas_handlers)) {
-                std::list<boost::any> args{json_args.at("collection").get<std::string>() };
+                auto collection = json_args.at("collection").get<std::string>();
+
+                std::list<boost::any> args{&collection};
+                std::string value;
 
                 if (op == "logical_quotas_set_maximum_number_of_data_objects" ||
                     op == "logical_quotas_set_maximum_size_in_bytes")
                 {
-                    args.push_back(json_args.at("value").get<handler::size_type>());
+                    value = json_args.at("value").get<std::string>();
+                    args.push_back(&value);
                 }
 
                 return (iter->second)(_instance_name, instance_configs, args, _effect_handler);

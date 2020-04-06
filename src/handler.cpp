@@ -149,6 +149,8 @@ namespace
 
     auto size_on_disk(rsComm_t& _conn, fs::path _p) -> size_type;
 
+    auto throw_if_string_cannot_be_cast_to_an_integer(const std::string& s, const std::string& error_msg) -> void;
+
     //
     // Function Implementations
     //
@@ -337,7 +339,7 @@ namespace
     {
         try {
             auto args_iter = std::begin(_rule_arguments);
-            const auto path = boost::any_cast<std::string>(*args_iter);
+            const auto& path = *boost::any_cast<std::string*>(*args_iter);
 
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
@@ -459,6 +461,19 @@ namespace
 
         return in.tellg();
     }
+
+    auto throw_if_string_cannot_be_cast_to_an_integer(const std::string& s, const std::string& error_msg) -> void
+    {
+        try {
+            std::stoll(s); // TODO Could be replaced with std::from_chars when it is available.
+        }
+        catch (const std::invalid_argument&) {
+            throw std::invalid_argument{error_msg};
+        }
+        catch (const std::out_of_range&) {
+            throw std::out_of_range{error_msg};
+        }
+    }
 } // anonymous namespace
 
 namespace irods::handler
@@ -488,7 +503,7 @@ namespace irods::handler
     {
         try {
             auto args_iter = std::begin(_rule_arguments);
-            const auto path = boost::any_cast<std::string>(*args_iter);
+            const auto& path = *boost::any_cast<std::string*>(*args_iter);
 
             auto& rei = get_rei(_effect_handler);
             auto username = get_collection_username(*rei.rsComm, path);
@@ -524,7 +539,7 @@ namespace irods::handler
     {
         try {
             auto args_iter = std::begin(_rule_arguments);
-            const auto path = boost::any_cast<std::string>(*args_iter);
+            const auto& path = *boost::any_cast<std::string*>(*args_iter);
 
             auto& rei = get_rei(_effect_handler);
             auto username = get_collection_username(*rei.rsComm, path);
@@ -577,7 +592,7 @@ namespace irods::handler
     {
         try {
             auto args_iter = std::begin(_rule_arguments);
-            const auto path = boost::any_cast<std::string>(*args_iter);
+            const auto& path = *boost::any_cast<std::string*>(*args_iter);
 
             auto& rei = get_rei(_effect_handler);
             auto username = get_collection_username(*rei.rsComm, path);
@@ -587,7 +602,9 @@ namespace irods::handler
             }
 
             switch_user(rei, *username, [&] {
-                const auto max_objects = std::to_string(boost::any_cast<size_type>(*++args_iter));
+                const auto& max_objects = *boost::any_cast<std::string*>(*++args_iter);
+                const auto msg = fmt::format("Logical Quotas Policy: Invalid value for maximum number of data objects [{}]", max_objects);
+                throw_if_string_cannot_be_cast_to_an_integer(max_objects, msg);
                 const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
                 fs::server::set_metadata(*rei.rsComm, path, {attrs.maximum_number_of_data_objects(), max_objects});
             });
@@ -607,7 +624,7 @@ namespace irods::handler
     {
         try {
             auto args_iter = std::begin(_rule_arguments);
-            const auto path = boost::any_cast<std::string>(*args_iter);
+            const auto& path = *boost::any_cast<std::string*>(*args_iter);
 
             auto& rei = get_rei(_effect_handler);
             auto username = get_collection_username(*rei.rsComm, path);
@@ -617,7 +634,9 @@ namespace irods::handler
             }
 
             switch_user(rei, *username, [&] {
-                const auto max_bytes = std::to_string(boost::any_cast<size_type>(*++args_iter));
+                const auto& max_bytes = *boost::any_cast<std::string*>(*++args_iter);
+                const auto msg = fmt::format("Logical Quotas Policy: Invalid value for maximum size in bytes [{}]", max_bytes);
+                throw_if_string_cannot_be_cast_to_an_integer(max_bytes, msg);
                 const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
                 fs::server::set_metadata(*rei.rsComm, path, {attrs.maximum_size_in_bytes(), max_bytes});
             });
@@ -681,6 +700,8 @@ namespace irods::handler
                                     std::list<boost::any>& _rule_arguments,
                                     irods::callback& _effect_handler) -> irods::error
     {
+        reset(); // Not needed necessarily, but here for completeness.
+
         try {
             auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
             auto& rei = get_rei(_effect_handler);
