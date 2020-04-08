@@ -48,21 +48,21 @@ target_compile_definitions(${PLUGIN} PRIVATE ${IRODS_COMPILE_DEFINITIONS}
                                              IRODS_ENABLE_SYSLOG
                                              IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
                                              IRODS_IO_TRANSPORT_ENABLE_SERVER_SIDE_API
-                                             FMT_HEADER_ONLY
-                                             SPDLOG_FMT_EXTERNAL)
+                                             SPDLOG_FMT_EXTERNAL
+                                             SPDLOG_NO_TLS)
 
-target_include_directories(${PLUGIN} PRIVATE ${CMAKE_SOURCE_DIR}/fmt/include
-                                             ${CMAKE_SOURCE_DIR}/spdlog/include
-                                             ${CMAKE_SOURCE_DIR}/spdlog/include/spdlog
-                                             ${IRODS_INCLUDE_DIRS}
-                                             ${IRODS_EXTERNALS_FULLPATH_CLANG}/include/c++/v1
+target_include_directories(${PLUGIN} PRIVATE ${IRODS_INCLUDE_DIRS}
                                              ${IRODS_EXTERNALS_FULLPATH_BOOST}/include
-                                             ${IRODS_EXTERNALS_FULLPATH_JSON}/include)
+                                             ${IRODS_EXTERNALS_FULLPATH_CLANG}/include/c++/v1
+                                             ${IRODS_EXTERNALS_FULLPATH_FMT}/include
+                                             ${IRODS_EXTERNALS_FULLPATH_JSON}/include
+                                             ${IRODS_EXTERNALS_FULLPATH_SPDLOG}/include)
 
 target_link_libraries(${PLUGIN} PRIVATE irods_server
                                         irods_common
                                         ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_filesystem.so
                                         ${IRODS_EXTERNALS_FULLPATH_BOOST}/lib/libboost_system.so
+                                        ${IRODS_EXTERNALS_FULLPATH_FMT}/lib/libfmt.so
                                         c++abi
                                         dl)
 
