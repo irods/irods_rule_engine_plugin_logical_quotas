@@ -1,5 +1,47 @@
 # iRODS Rule Engine Plugin - Logical Quotas
 
+Allows administrators to track and enforce limits on the number of bytes and data objects in a collection.
+
+The following example demonstrates monitoring a collection, setting a quota on the maximum number of data
+objects, and then violating that quota.
+```bash
+$ ils
+/tempZone/home/rods:
+  foo
+  bar
+$ irule -r irods_rule_engine_plugin-irods_rule_language-instance 'logical_quotas_start_monitoring_collection("/tempZone/home/rods")' null ruleExecOut
+$ imeta ls -C .                                                                                                                                                                
+AVUs defined for collection /tempZone/home/rods:
+attribute: irods::logical_quotas::total_number_of_data_objects
+value: 2
+units: 
+----
+attribute: irods::logical_quotas::total_size_in_bytes
+value: 1014
+units: 
+$ irule -r irods_rule_engine_plugin-irods_rule_language-instance 'logical_quotas_set_maximum_number_of_data_objects("/tempZone/home/rods", "2")' null ruleExecOut              
+$ imeta ls -C .
+AVUs defined for collection /tempZone/home/rods:
+attribute: irods::logical_quotas::maximum_number_of_data_objects
+value: 2
+units: 
+----
+attribute: irods::logical_quotas::total_number_of_data_objects
+value: 2
+units: 
+----
+attribute: irods::logical_quotas::total_size_in_bytes
+value: 1014
+units: 
+$ iput baz
+remote addresses: 152.54.8.75 ERROR: putUtil: put error for /tempZone/home/rods/baz, status = -130000 status = -130000 SYS_INVALID_INPUT_PARAM
+Level 0: Logical Quotas Policy Violation: Adding object exceeds maximum number of objects limit
+$ ils
+/tempZone/home/rods:
+  foo
+  bar
+```
+
 ## Requirements
 - iRODS v4.2.8+
 - irods-dev package
@@ -39,7 +81,7 @@ should be similar to the following:
 
 ## Configuration
 To enable, prepend the following plugin config to the list of rule engines in `/etc/irods/server_config.json`. 
-The plugin config should be placed near the beginning of the `"rule_engines"` section.
+The plugin config must be placed ahead of all plugins that do not support continuation.
 
 Even though this plugin will process PEPs first due to it's positioning, subsequent Rule Engine Plugins (REP) will 
 still be allowed to process the same PEPs without any issues.
