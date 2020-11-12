@@ -44,7 +44,7 @@ set_target_properties(${PLUGIN} PROPERTIES CXX_STANDARD ${IRODS_CXX_STANDARD})
 target_compile_options(${PLUGIN} PRIVATE -Wno-write-strings -nostdinc++)
 
 target_compile_definitions(${PLUGIN} PRIVATE ${IRODS_COMPILE_DEFINITIONS}
-                                             RODS_SERVER
+                                             IRODS_QUERY_ENABLE_SERVER_SIDE_API
                                              IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
                                              IRODS_IO_TRANSPORT_ENABLE_SERVER_SIDE_API)
 
