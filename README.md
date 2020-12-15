@@ -43,7 +43,7 @@ $ ils
 ```
 
 ## Requirements
-- iRODS v4.3.0+
+- iRODS v4.3.0
 - irods-dev package
 - irods-runtime package
 - irods-externals-boost package
@@ -79,10 +79,32 @@ should be similar to the following:
 ```
 
 ## Configuration
-To enable, prepend the following plugin config to the list of rule engines in `/etc/irods/server_config.json`. 
-The plugin config must be placed ahead of all plugins that do not support continuation.
+To enable, prepend the following plugin configuration to the list of rule engines in `/etc/irods/server_config.json`. 
 
-Even though this plugin will process PEPs first due to it's positioning, subsequent Rule Engine Plugins (REP) will 
+The plugin configuration must be placed ahead of all plugins that define any of the following PEPs:
+- pep_api_data_obj_close_post
+- pep_api_data_obj_close_pre
+- pep_api_data_obj_copy_post
+- pep_api_data_obj_copy_pre
+- pep_api_data_obj_create_and_stat_post
+- pep_api_data_obj_create_and_stat_pre
+- pep_api_data_obj_create_post
+- pep_api_data_obj_create_pre
+- pep_api_data_obj_open_and_stat_pre
+- pep_api_data_obj_open_pre
+- pep_api_data_obj_put_post
+- pep_api_data_obj_put_pre
+- pep_api_data_obj_rename_post
+- pep_api_data_obj_rename_pre
+- pep_api_data_obj_unlink_ppost
+- pep_api_data_obj_unlink_pre
+- pep_api_replica_close_post
+- pep_api_replica_close_pre
+- pep_api_replica_open_pre
+- pep_api_rm_coll_post
+- pep_api_rm_coll_pre
+
+Even though this plugin will process PEPs first due to its positioning, subsequent Rule Engine Plugins (REP) will 
 still be allowed to process the same PEPs without any issues.
 ```javascript
 "rule_engines": [
@@ -108,6 +130,7 @@ still be allowed to process the same PEPs without any issues.
 The following operations are supported:
 - logical_quotas_count_total_number_of_data_objects
 - logical_quotas_count_total_size_in_bytes
+- logical_quotas_get_collection_status
 - logical_quotas_recalculate_totals
 - logical_quotas_set_maximum_number_of_data_objects
 - logical_quotas_set_maximum_size_in_bytes
@@ -151,9 +174,36 @@ Logical Quotas only provides a relative value assuming there are many clients ac
 To help with this situation, `logical_quotas_recalculate_totals` is provided. This operation can be scheduled
 to run periodically to keep the numbers as accurate as possible.
 
+You can also retrieve the quota status for a collection as JSON by invoking `logical_quotas_get_collection_status`, for example:
+```bash
+$ irule -r irods_rule_engine_plugin-logical_quotas-instance '{"operation": "logical_quotas_get_collection_status", "collection": "/tempZone/home/rods"}' null ruleExecOut
+```
+The JSON output will be printed to the terminal and have the following structure:
+```javascript
+{
+    <maximum_number_of_data_objects_key>: "#",
+    <maximum_size_in_bytes_key>: "#",
+    <total_number_of_data_objects_key>: "#",
+    <total_size_in_bytes_key>: "#"
+}
+```
+The **keys** are derived from the **namespace** and **metadata_attribute_names** defined by the plugin configuration.
+
 ### Invoking operations via the Native Rule Language
 Here, we demonstrate how to start monitoring a collection just like in the section above.
 ```bash
 $ irule -r irods_rule_engine_plugin-irods_rule_language-instance 'logical_quotas_start_monitoring_collection(*col)' '*col=/tempZone/home/rods' ruleExecOut
 ```
 
+## Stream Operations
+With previous iterations of this plugin, changes in data were tracked and checked for violations across all
+stream-based operations in real-time. However, with the introduction of intermediate replicas and logical locking
+in iRODS v4.2.9, maintaining this behavior became complex. Due to the complexity, the handling of quotas has been
+relaxed. The most important changes are as follows:
+- Quotas are no longer checked, enforced, or updated during write and seek operations.
+- Once a quota has been violated, opening a data object for writing will fail.
+- Only data objects with replicas marked as good in the catalog are counted towards quota totals.
+
+These changes have the following effects:
+- The plugin allows stream-based writes to violate the maximum bytes quota once.
+- Subsequent stream-based creates and writes will be denied until the quotas are out of violation.
