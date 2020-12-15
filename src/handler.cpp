@@ -3,7 +3,12 @@
 #include "logical_quotas_error.hpp"
 #include "switch_user_error.hpp"
 
+#include <irods/execCmd.h>
+#include <irods/irods_re_plugin.hpp>
+#include <irods/irods_state_table.h>
+#include <irods/msParam.h>
 #include <irods/objDesc.hpp>
+#include <irods/rodsDef.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -16,8 +21,10 @@
 #include <irods/irods_get_l1desc.hpp>
 #include <irods/modAVUMetadata.h>
 #include <irods/rodsErrorTable.h>
+#include <irods/replica.hpp>
 
 #include <fmt/format.h>
+#include <json.hpp>
 
 #include <string>
 #include <string_view>
@@ -72,12 +79,6 @@ namespace
     private:
         const fs::path& p_;
     }; // class parent_path
-
-    // 
-    // Globals
-    //
-    
-    file_position_map_type fpos_map;
 
     //
     // Function Prototypes
@@ -147,8 +148,6 @@ namespace
                              std::string_view _key) -> const irods::instance_configuration&;
 
     auto make_unique_id(fs::path _p) -> std::string;
-
-    auto size_on_disk(rsComm_t& _conn, fs::path _p) -> size_type;
 
     auto throw_if_string_cannot_be_cast_to_an_integer(const std::string& s, const std::string& error_msg) -> void;
 
@@ -449,20 +448,6 @@ namespace
         return id;
     }
 
-    auto size_on_disk(rsComm_t& _conn, fs::path _p) -> size_type
-    {
-        namespace io = irods::experimental::io;
-
-        io::server::default_transport tp{_conn};
-        io::idstream in{tp, _p, std::ios_base::ate};
-
-        if (!in) {
-            throw std::runtime_error{"Logical Quotas Policy: Could not open data object"};
-        }
-
-        return in.tellg();
-    }
-
     auto throw_if_string_cannot_be_cast_to_an_integer(const std::string& s, const std::string& error_msg) -> void
     {
         try {
@@ -479,17 +464,116 @@ namespace
 
 namespace irods::handler
 {
+    auto logical_quotas_get_collection_status(const std::string& _instance_name,
+                                              const instance_configuration_map& _instance_configs,
+                                              std::list<boost::any>& _rule_arguments,
+                                              MsParamArray* _ms_param_array,
+                                              irods::callback& _effect_handler) -> irods::error
+    {
+        try {
+            auto& rei = get_rei(_effect_handler);
+            auto& conn = *rei.rsComm;
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+
+            auto args_iter = std::begin(_rule_arguments);
+            const auto& path = *boost::any_cast<std::string*>(*args_iter);
+
+            if (!is_monitored_collection(conn, attrs, path)) {
+                THROW(SYS_INVALID_INPUT_PARAM, fmt::format("Logical Quotas Policy: [{}] is not a monitored collection.", path));
+            }
+
+            auto username = get_collection_username(*rei.rsComm, path);
+
+            if (!username) {
+                throw std::runtime_error{fmt::format("Logical Quotas Policy: No owner found for path [{}]", path)};
+            }
+
+            auto quota_status = nlohmann::json::object(); // Holds the current quota values.
+
+            switch_user(rei, *username, [&] {
+                // Fetch the current quota values for the collection.
+                for (const auto& quota_name : {attrs.maximum_number_of_data_objects(),
+                                               attrs.maximum_size_in_bytes(),
+                                               attrs.total_number_of_data_objects(),
+                                               attrs.total_size_in_bytes()})
+                {
+                    const auto gql = fmt::format("select META_COLL_ATTR_VALUE where COLL_NAME = '{}' and META_COLL_ATTR_NAME = '{}'",
+                                                 path, quota_name);
+
+                    for (const auto& row : irods::query{&conn, gql}) {
+                        quota_status[quota_name] = row[0];
+                    }
+                }
+            });
+
+            // "_ms_param_array" points to a valid object depending on how the rule is invoked. If the implementation
+            // is invoked via exec_rule, then this parameter will be null. If invoked via exec_rule_text or exec_rule_expression,
+            // this parameter will point to a valid object. The exec_rule_text/expression functions reply on this parameter to
+            // return information back to the client.
+            if (_ms_param_array) {
+                if (auto* msp = getMsParamByLabel(_ms_param_array, "ruleExecOut"); msp) {
+                    // Free any resources previously associated with the parameter.
+                    if (msp->type) { std::free(msp->type); }
+                    if (msp->inOutStruct) { std::free(msp->inOutStruct); }
+
+                    // Set the correct type information and allocate enough memory for that type.
+                    msp->type = strdup(ExecCmdOut_MS_T);
+                    msp->inOutStruct = std::malloc(sizeof(ExecCmdOut));
+
+                    auto* out = static_cast<ExecCmdOut*>(msp->inOutStruct);
+                    std::memset(out, 0, sizeof(ExecCmdOut));
+
+                    // Copy the JSON string into the output object.
+                    const auto json_string = quota_status.dump();
+                    const auto buffer_size = json_string.size() + 1;
+                    out->stdoutBuf.len = buffer_size;
+                    out->stdoutBuf.buf = std::malloc(sizeof(char) * buffer_size);
+                    std::memcpy(out->stdoutBuf.buf, json_string.data(), buffer_size);
+                }
+                else {
+                    auto* out = static_cast<ExecCmdOut*>(std::malloc(sizeof(ExecCmdOut)));
+                    std::memset(out, 0, sizeof(ExecCmdOut));
+
+                    // Copy the JSON string into the output object.
+                    const auto json_string = quota_status.dump();
+                    const auto buffer_size = json_string.size() + 1;
+                    out->stdoutBuf.len = buffer_size;
+                    out->stdoutBuf.buf = std::malloc(sizeof(char) * buffer_size);
+                    std::memcpy(out->stdoutBuf.buf, json_string.data(), buffer_size);
+
+                    addMsParamToArray(_ms_param_array, "ruleExecOut", ExecCmdOut_MS_T, out, nullptr, 0);
+                }
+            }
+            // If "_ms_param_array" is not set, then the rule must have been invoked via exec_rule. The client must provide
+            // a second variable so that the results can be returned.
+            else if (_rule_arguments.size() == 2) {
+                *boost::any_cast<std::string*>(*std::next(args_iter)) = quota_status.dump();
+            }
+            else {
+                return ERROR(RE_UNABLE_TO_WRITE_VAR, "Logical Quotas Policy: Missing output variable for status.");
+            }
+        }
+        catch (const std::exception& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return SUCCESS();
+    }
+    
     auto logical_quotas_start_monitoring_collection(const std::string& _instance_name,
                                                     const instance_configuration_map& _instance_configs,
                                                     std::list<boost::any>& _rule_arguments,
+                                                    MsParamArray* _ms_param_array,
                                                     irods::callback& _effect_handler) -> irods::error
     {
-        return logical_quotas_recalculate_totals(_instance_name, _instance_configs, _rule_arguments, _effect_handler);
+        return logical_quotas_recalculate_totals(_instance_name, _instance_configs, _rule_arguments, _ms_param_array, _effect_handler);
     }
     
     auto logical_quotas_stop_monitoring_collection(const std::string& _instance_name,
                                                    const instance_configuration_map& _instance_configs,
                                                    std::list<boost::any>& _rule_arguments,
+                                                   MsParamArray* _ms_param_array,
                                                    irods::callback& _effect_handler) -> irods::error
     {
         return unset_metadata_impl(_instance_name, _instance_configs, _rule_arguments, _effect_handler, [](const auto& _attrs) {
@@ -500,6 +584,7 @@ namespace irods::handler
     auto logical_quotas_count_total_number_of_data_objects(const std::string& _instance_name,
                                                            const instance_configuration_map& _instance_configs,
                                                            std::list<boost::any>& _rule_arguments,
+                                                           MsParamArray* _ms_param_array,
                                                            irods::callback& _effect_handler) -> irods::error
     {
         try {
@@ -536,6 +621,7 @@ namespace irods::handler
     auto logical_quotas_count_total_size_in_bytes(const std::string& _instance_name,
                                                   const instance_configuration_map& _instance_configs,
                                                   std::list<boost::any>& _rule_arguments,
+                                                  MsParamArray* _ms_param_array,
                                                   irods::callback& _effect_handler) -> irods::error
     {
         try {
@@ -572,13 +658,14 @@ namespace irods::handler
     auto logical_quotas_recalculate_totals(const std::string& _instance_name,
                                            const instance_configuration_map& _instance_configs,
                                            std::list<boost::any>& _rule_arguments,
+                                           MsParamArray* _ms_param_array,
                                            irods::callback& _effect_handler) -> irods::error
     {
         auto functions = {logical_quotas_count_total_number_of_data_objects,
                           logical_quotas_count_total_size_in_bytes};
 
         for (auto&& f : functions) {
-            if (const auto error = f(_instance_name, _instance_configs, _rule_arguments, _effect_handler); !error.ok()) {
+            if (const auto error = f(_instance_name, _instance_configs, _rule_arguments, _ms_param_array, _effect_handler); !error.ok()) {
                 return error;
             }
         }
@@ -589,6 +676,7 @@ namespace irods::handler
     auto logical_quotas_set_maximum_number_of_data_objects(const std::string& _instance_name,
                                                            const instance_configuration_map& _instance_configs,
                                                            std::list<boost::any>& _rule_arguments,
+                                                           MsParamArray* _ms_param_array,
                                                            irods::callback& _effect_handler) -> irods::error
     {
         try {
@@ -621,6 +709,7 @@ namespace irods::handler
     auto logical_quotas_set_maximum_size_in_bytes(const std::string& _instance_name,
                                                   const instance_configuration_map& _instance_configs,
                                                   std::list<boost::any>& _rule_arguments,
+                                                  MsParamArray* _ms_param_array,
                                                   irods::callback& _effect_handler) -> irods::error
     {
         try {
@@ -653,6 +742,7 @@ namespace irods::handler
     auto logical_quotas_unset_maximum_number_of_data_objects(const std::string& _instance_name,
                                                              const instance_configuration_map& _instance_configs,
                                                              std::list<boost::any>& _rule_arguments,
+                                                             MsParamArray* _ms_param_array,
                                                              irods::callback& _effect_handler) -> irods::error
     {
         return unset_metadata_impl(_instance_name, _instance_configs, _rule_arguments, _effect_handler, [](const auto& _attrs) {
@@ -663,6 +753,7 @@ namespace irods::handler
     auto logical_quotas_unset_maximum_size_in_bytes(const std::string& _instance_name,
                                                     const instance_configuration_map& _instance_configs,
                                                     std::list<boost::any>& _rule_arguments,
+                                                    MsParamArray* _ms_param_array,
                                                     irods::callback& _effect_handler) -> irods::error
     {
         return unset_metadata_impl(_instance_name, _instance_configs, _rule_arguments, _effect_handler, [](const auto& _attrs) {
@@ -673,6 +764,7 @@ namespace irods::handler
     auto logical_quotas_unset_total_number_of_data_objects(const std::string& _instance_name,
                                                            const instance_configuration_map& _instance_configs,
                                                            std::list<boost::any>& _rule_arguments,
+                                                           MsParamArray* _ms_param_array,
                                                            irods::callback& _effect_handler) -> irods::error
     {
         return unset_metadata_impl(_instance_name, _instance_configs, _rule_arguments, _effect_handler, [](const auto& _attrs) {
@@ -683,6 +775,7 @@ namespace irods::handler
     auto logical_quotas_unset_total_size_in_bytes(const std::string& _instance_name,
                                                   const instance_configuration_map& _instance_configs,
                                                   std::list<boost::any>& _rule_arguments,
+                                                  MsParamArray* _ms_param_array,
                                                   irods::callback& _effect_handler) -> irods::error
     {
         return unset_metadata_impl(_instance_name, _instance_configs, _rule_arguments, _effect_handler, [](const auto& _attrs) {
@@ -699,6 +792,7 @@ namespace irods::handler
     auto pep_api_data_obj_copy::pre(const std::string& _instance_name,
                                     const instance_configuration_map& _instance_configs,
                                     std::list<boost::any>& _rule_arguments,
+                                    MsParamArray* _ms_param_array,
                                     irods::callback& _effect_handler) -> irods::error
     {
         reset(); // Not needed necessarily, but here for completeness.
@@ -711,7 +805,7 @@ namespace irods::handler
 
             if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
                 data_objects_ = 1;
-                size_in_bytes_ = size_on_disk(conn, input->srcDataObjInp.objPath);
+                size_in_bytes_ = fs::server::data_object_size(conn, input->srcDataObjInp.objPath);
             }
             else if (fs::server::is_collection(status)) {
                 std::tie(data_objects_, size_in_bytes_) = compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
@@ -740,6 +834,7 @@ namespace irods::handler
     auto pep_api_data_obj_copy::post(const std::string& _instance_name,
                                      const instance_configuration_map& _instance_configs,
                                      std::list<boost::any>& _rule_arguments,
+                                     MsParamArray* _ms_param_array,
                                      irods::callback& _effect_handler) -> irods::error
     {
         try {
@@ -763,6 +858,7 @@ namespace irods::handler
     auto pep_api_data_obj_create_pre(const std::string& _instance_name,
                                      const instance_configuration_map& _instance_configs,
                                      std::list<boost::any>& _rule_arguments,
+                                     MsParamArray* _ms_param_array,
                                      irods::callback& _effect_handler) -> irods::error
     {
         try {
@@ -790,6 +886,7 @@ namespace irods::handler
     auto pep_api_data_obj_create_post(const std::string& _instance_name,
                                       const instance_configuration_map& _instance_configs,
                                       std::list<boost::any>& _rule_arguments,
+                                      MsParamArray* _ms_param_array,
                                       irods::callback& _effect_handler) -> irods::error
     {
         try {
@@ -819,6 +916,7 @@ namespace irods::handler
     auto pep_api_data_obj_put::pre(const std::string& _instance_name,
                                    const instance_configuration_map& _instance_configs,
                                    std::list<boost::any>& _rule_arguments,
+                                   MsParamArray* _ms_param_array,
                                    irods::callback& _effect_handler) -> irods::error
     {
         reset();
@@ -831,7 +929,7 @@ namespace irods::handler
 
             if (fs::server::exists(*rei.rsComm, input->objPath)) {
                 forced_overwrite_ = true;
-                const size_type existing_size = size_on_disk(conn, input->objPath);
+                const size_type existing_size = fs::server::data_object_size(conn, input->objPath);
                 size_diff_ = static_cast<size_type>(input->dataSize) - existing_size;
 
                 for_each_monitored_collection(conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, auto& _info) {
@@ -860,6 +958,7 @@ namespace irods::handler
     auto pep_api_data_obj_put::post(const std::string& _instance_name,
                                     const instance_configuration_map& _instance_configs,
                                     std::list<boost::any>& _rule_arguments,
+                                    MsParamArray* _ms_param_array,
                                     irods::callback& _effect_handler) -> irods::error
     {
         try {
@@ -896,6 +995,7 @@ namespace irods::handler
     auto pep_api_data_obj_rename::pre(const std::string& _instance_name,
                                       const instance_configuration_map& _instance_configs,
                                       std::list<boost::any>& _rule_arguments,
+                                      MsParamArray* _ms_param_array,
                                       irods::callback& _effect_handler) -> irods::error
     {
         reset();
@@ -915,7 +1015,7 @@ namespace irods::handler
 
             if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath); fs::server::is_data_object(status)) {
                 data_objects_ = 1;
-                size_in_bytes_ = size_on_disk(conn, input->srcDataObjInp.objPath);
+                size_in_bytes_ = fs::server::data_object_size(conn, input->srcDataObjInp.objPath);
             }
             else if (fs::server::is_collection(status)) {
                 std::tie(data_objects_, size_in_bytes_) = compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
@@ -981,6 +1081,7 @@ namespace irods::handler
     auto pep_api_data_obj_rename::post(const std::string& _instance_name,
                                        const instance_configuration_map& _instance_configs,
                                        std::list<boost::any>& _rule_arguments,
+                                       MsParamArray* _ms_param_array,
                                        irods::callback& _effect_handler) -> irods::error
     {
         // There is no change in state, therefore return immediately.
@@ -1074,6 +1175,7 @@ namespace irods::handler
     auto pep_api_data_obj_unlink::pre(const std::string& _instance_name,
                                       const instance_configuration_map& _instance_configs,
                                       std::list<boost::any>& _rule_arguments,
+                                      MsParamArray* _ms_param_array,
                                       irods::callback& _effect_handler) -> irods::error
     {
         reset();
@@ -1085,7 +1187,7 @@ namespace irods::handler
             const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
             if (auto collection = get_monitored_parent_collection(conn, attrs, input->objPath); collection) {
-                size_in_bytes_ = size_on_disk(conn, input->objPath);
+                size_in_bytes_ = fs::server::data_object_size(conn, input->objPath);
             }
         }
         catch (const std::exception& e) {
@@ -1099,6 +1201,7 @@ namespace irods::handler
     auto pep_api_data_obj_unlink::post(const std::string& _instance_name,
                                        const instance_configuration_map& _instance_configs,
                                        std::list<boost::any>& _rule_arguments,
+                                       MsParamArray* _ms_param_array,
                                        irods::callback& _effect_handler) -> irods::error
     {
         try {
@@ -1119,57 +1222,11 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
-    auto pep_api_data_obj_open::reset() noexcept -> void
-    {
-        data_objects_ = 0;
-        size_in_bytes_ = 0;
-    }
-
-    auto pep_api_data_obj_open::pre(const std::string& _instance_name,
-                                    const instance_configuration_map& _instance_configs,
-                                    std::list<boost::any>& _rule_arguments,
-                                    irods::callback& _effect_handler) -> irods::error
-    {
-        reset();
-
-        try {
-            auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
-            auto& rei = get_rei(_effect_handler);
-            auto& conn = *rei.rsComm;
-            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-
-            if (!fs::server::exists(*rei.rsComm, input->objPath)) {
-                data_objects_ = 1;
-                size_in_bytes_ = 0;
-
-                for_each_monitored_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
-                    throw_if_maximum_number_of_data_objects_violation(attrs, _info, data_objects_);
-                });
-            }
-            // If the data object exists and the truncate flag is set,
-            // then capture the size of the data object. This will be used to update
-            // the metadata and reflect that the data object has been truncated.
-            else if (O_TRUNC == (input->openFlags & O_TRUNC)) {
-                data_objects_ = 0;
-                size_in_bytes_ = size_on_disk(conn, input->objPath);
-            }
-        }
-        catch (const logical_quotas_error& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
-        }
-        catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(RE_RUNTIME_ERROR, e.what());
-        }
-
-        return CODE(RULE_ENGINE_CONTINUE);
-    }
-
-    auto pep_api_data_obj_open::post(const std::string& _instance_name,
-                                     const instance_configuration_map& _instance_configs,
-                                     std::list<boost::any>& _rule_arguments,
-                                     irods::callback& _effect_handler) -> irods::error
+    auto pep_api_data_obj_open_pre(const std::string& _instance_name,
+                                   const instance_configuration_map& _instance_configs,
+                                   std::list<boost::any>& _rule_arguments,
+                                   MsParamArray* _ms_param_array,
+                                   irods::callback& _effect_handler) -> irods::error
     {
         try {
             auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
@@ -1177,181 +1234,31 @@ namespace irods::handler
             auto& conn = *rei.rsComm;
             const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
-            if (data_objects_ > 0 || size_in_bytes_ > 0) {
-                for_each_monitored_collection(conn, attrs, input->objPath, [&conn, &attrs](const auto& _collection, const auto& _info) {
-                    update_data_object_count_and_size(conn, attrs, _collection, _info, data_objects_, -size_in_bytes_);
-                });
-            }
-
-            // Assumptions:
-            // - All stream operations are isolated from one another due to each stream using a separate connection.
-            // - No two streams will ever use the same connection to write to the same data object.
-            // - The logical path is enough to uniquely identify a data object.
-            // - Multi-process/server is out of scope of this implementation.
-
-            file_position_type fpos = 0; // Handles O_TRUNC case.
-
-            // If the client requested append and NOT truncate, then set the size
-            // equal to the size of the data object.
-            if (O_APPEND == (input->openFlags & (O_APPEND | O_TRUNC))) {
-                fpos = size_on_disk(conn, input->objPath);
-            }
-
-            fpos_map.insert_or_assign(make_unique_id(input->objPath), fpos);
-        }
-        catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(RE_RUNTIME_ERROR, e.what());
-        }
-
-        return CODE(RULE_ENGINE_CONTINUE);
-    }
-
-    auto pep_api_data_obj_lseek::reset() noexcept -> void
-    {
-        fpos_ = 0;
-    }
-
-    auto pep_api_data_obj_lseek::pre(const std::string& _instance_name,
-                                     const instance_configuration_map& _instance_configs,
-                                     std::list<boost::any>& _rule_arguments,
-                                     irods::callback& _effect_handler) -> irods::error
-    {
-        reset();
-
-        try {
-            auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
-            auto& rei = get_rei(_effect_handler);
-            auto& conn = *rei.rsComm;
-            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-            const auto& l1desc = irods::get_l1desc(input->l1descInx); 
-
-            // TODO Does opening a data object with the O_TRUNC flag cause an update to the catalog?
-            // This is important because for lseek, we need the real size of the data object. In this case,
-            // zero should be returned.
-            //
-            // TODO Updating the catalog to reflect O_TRUNC is mandatory and should happen in 4.2.8.
-            // 
-            // For now, we can use dstream::seekg/tellg to retrieve the real size of the data object
-            // as it is being written to.
-            const auto size = size_on_disk(conn, l1desc.dataObjInfo->objPath);
-
-            if (O_APPEND == (l1desc.dataObjInp->openFlags & O_APPEND)) {
-                fpos_ = size;
-            }
-            else {
-                switch (input->whence) {
-                    case SEEK_SET: fpos_  = input->offset; break;
-                    case SEEK_CUR: fpos_ += input->offset; break;
-                    case SEEK_END: fpos_  = (size + input->offset); break; // FIXME This could overflow!
-                    //case SEEK_HOLE: break;
-                    //case SEEK_DATA: break;
-                    default: break;
+            if (O_CREAT == (input->openFlags & O_CREAT)) {
+                if (!fs::server::exists(*rei.rsComm, input->objPath)) {
+                    for_each_monitored_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
+                        throw_if_maximum_number_of_data_objects_violation(attrs, _info, 1);
+                    });
                 }
             }
-
-            if (fpos_ < 0) {
-                throw std::runtime_error{"Logical Quotas Policy: File seek position cannot be less than zero"};
+            // Opening an existing data object for reading is fine as long as it does not result in
+            // the creation of a new data object.
+            else if (O_RDONLY == (input->openFlags & O_ACCMODE)) {
+                return CODE(RULE_ENGINE_CONTINUE);
             }
 
-            const std::int64_t size_diff = fpos_ - size;
-
-            // TODO Should probably do the following only if adding NEW bytes would exceed the limit.
-            // Clients are allowed to write to previously allocated space.
-            for_each_monitored_collection(conn, attrs, l1desc.dataObjInfo->objPath, [&attrs, size_diff](auto&, auto& _info) {
-                throw_if_maximum_size_in_bytes_violation(attrs, _info, size_diff);
+            // Because streaming operations can result in byte quotas being exceeded, the REP must
+            // verify that the quotas have not been violated by a previous streaming operation. This
+            // is because the REP does not track bytes written during streaming operations.
+            for_each_monitored_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
+                // We only need to check the byte count here. If the rest of the REP is implemented
+                // correctly, then the data object count should be in line already.
+                throw_if_maximum_size_in_bytes_violation(attrs, _info, 0);
             });
         }
         catch (const logical_quotas_error& e) {
             log_exception_message(e.what(), _effect_handler);
             return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
-        }
-        catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(RE_RUNTIME_ERROR, e.what());
-        }
-
-        return CODE(RULE_ENGINE_CONTINUE);
-    }
-
-    auto pep_api_data_obj_lseek::post(const std::string& _instance_name,
-                                      const instance_configuration_map& _instance_configs,
-                                      std::list<boost::any>& _rule_arguments,
-                                      irods::callback& _effect_handler) -> irods::error
-    {
-        try {
-            auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
-            const auto& l1desc = irods::get_l1desc(input->l1descInx); 
-            fpos_map.at(make_unique_id(l1desc.dataObjInfo->objPath)) = fpos_;
-        }
-        catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(RE_RUNTIME_ERROR, e.what());
-        }
-
-        return CODE(RULE_ENGINE_CONTINUE);
-    }
-
-    auto pep_api_data_obj_write::reset() noexcept -> void
-    {
-        size_diff_ = 0; 
-    }
-
-    auto pep_api_data_obj_write::pre(const std::string& _instance_name,
-                                     const instance_configuration_map& _instance_configs,
-                                     std::list<boost::any>& _rule_arguments,
-                                     irods::callback& _effect_handler) -> irods::error
-    {
-        reset();
-
-        try {
-            auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
-            auto* bbuf = get_pointer<bytesBuf_t>(_rule_arguments, 3);
-            auto& rei = get_rei(_effect_handler);
-            auto& conn = *rei.rsComm;
-            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-            const auto& l1desc = irods::get_l1desc(input->l1descInx);
-            const auto* path = l1desc.dataObjInfo->objPath; 
-
-            size_diff_ = fpos_map.at(make_unique_id(path)) + bbuf->len - size_on_disk(conn, path);
-
-            // Only check for violations if new bytes are written.
-            if (size_diff_ > 0) {
-                for_each_monitored_collection(conn, attrs, path, [&attrs](auto&, const auto& _info) {
-                    throw_if_maximum_size_in_bytes_violation(attrs, _info, size_diff_);
-                });
-            }
-        }
-        catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(RE_RUNTIME_ERROR, e.what());
-        }
-
-        return CODE(RULE_ENGINE_CONTINUE);
-    }
-
-    auto pep_api_data_obj_write::post(const std::string& _instance_name,
-                                      const instance_configuration_map& _instance_configs,
-                                      std::list<boost::any>& _rule_arguments,
-                                      irods::callback& _effect_handler) -> irods::error
-    {
-        try {
-            auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
-            auto* bbuf = get_pointer<bytesBuf_t>(_rule_arguments, 3);
-            auto& rei = get_rei(_effect_handler);
-            auto& conn = *rei.rsComm;
-            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-            const auto& l1desc = irods::get_l1desc(input->l1descInx);
-            const auto* path = l1desc.dataObjInfo->objPath;
-
-            fpos_map.at(make_unique_id(path)) += bbuf->len;
-
-            // Only update the totals if new bytes are written.
-            if (size_diff_ > 0) {
-                for_each_monitored_collection(conn, attrs, path, [&conn, &attrs](const auto& _collection, const auto& _info) {
-                    update_data_object_count_and_size(conn, attrs, _collection, _info, 0, size_diff_);
-                });
-            }
         }
         catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
@@ -1369,6 +1276,7 @@ namespace irods::handler
     auto pep_api_data_obj_close::pre(const std::string& _instance_name,
                                      const instance_configuration_map& _instance_configs,
                                      std::list<boost::any>& _rule_arguments,
+                                     MsParamArray* _ms_param_array,
                                      irods::callback& _effect_handler) -> irods::error
     {
         reset();
@@ -1376,6 +1284,15 @@ namespace irods::handler
         try {
             auto* input = get_pointer<openedDataObjInp_t>(_rule_arguments);
             const auto& l1desc = irods::get_l1desc(input->l1descInx);
+
+            // Return immediately if the client opened an existing data object for reading.
+            // This avoids unnecessary catalog updates.
+            if (const auto flags = l1desc.dataObjInp->openFlags;
+                O_RDONLY == (flags & O_ACCMODE) && O_CREAT != (flags & O_CREAT))
+            {
+                return CODE(RULE_ENGINE_CONTINUE);
+            }
+
             path_ = l1desc.dataObjInfo->objPath;
         }
         catch (const std::exception& e) {
@@ -1389,10 +1306,118 @@ namespace irods::handler
     auto pep_api_data_obj_close::post(const std::string& _instance_name,
                                       const instance_configuration_map& _instance_configs,
                                       std::list<boost::any>& _rule_arguments,
+                                      MsParamArray* _ms_param_array,
                                       irods::callback& _effect_handler) -> irods::error
     {
         try {
-            fpos_map.erase(make_unique_id(path_));
+            auto& rei = get_rei(_effect_handler);
+            auto& conn = *rei.rsComm;
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+
+            // If the path is empty, either the pre-PEP detected that the client opened an
+            // existing data object for reading and returned early, or an error occurred.
+            // This avoids unnecessary catalog updates.
+            if (path_.empty()) {
+                return CODE(RULE_ENGINE_CONTINUE);
+            }
+
+            for_each_monitored_collection(conn, attrs, path_, [&](auto& _collection, const auto& _info) {
+                std::string p = fs::path{path_}.parent_path();
+                std::list<boost::any> args{&p};
+                const auto err = logical_quotas_recalculate_totals(_instance_name,
+                                                                   _instance_configs,
+                                                                   args,
+                                                                   _ms_param_array,
+                                                                   _effect_handler);
+
+                if (!err.ok()) {
+                    THROW(err.code(), err.result());
+                }
+            });
+        }
+        catch (const irods::exception& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return e;
+        }
+        catch (const std::exception& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return CODE(RULE_ENGINE_CONTINUE);
+    }
+
+    auto pep_api_replica_close::reset() noexcept -> void
+    {
+        path_.clear();
+    }
+
+    auto pep_api_replica_close::pre(const std::string& _instance_name,
+                                    const instance_configuration_map& _instance_configs,
+                                    std::list<boost::any>& _rule_arguments,
+                                    MsParamArray* _ms_param_array,
+                                    irods::callback& _effect_handler) -> irods::error
+    {
+        reset();
+
+        try {
+            auto* input = get_pointer<BytesBuf>(_rule_arguments);
+            const auto json_input = nlohmann::json::parse(std::string_view(static_cast<char*>(input->buf), input->len));
+            const auto& l1desc = irods::get_l1desc(json_input.at("fd").get<int>());
+
+            // Return immediately if the client opened an existing data object for reading.
+            // This avoids unnecessary catalog updates.
+            if (const auto flags = l1desc.dataObjInp->openFlags;
+                O_RDONLY == (flags & O_ACCMODE) && O_CREAT != (flags & O_CREAT))
+            {
+                return CODE(RULE_ENGINE_CONTINUE);
+            }
+
+            path_ = l1desc.dataObjInfo->objPath;
+        }
+        catch (const std::exception& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return CODE(RULE_ENGINE_CONTINUE);
+    }
+
+    auto pep_api_replica_close::post(const std::string& _instance_name,
+                                     const instance_configuration_map& _instance_configs,
+                                     std::list<boost::any>& _rule_arguments,
+                                     MsParamArray* _ms_param_array,
+                                     irods::callback& _effect_handler) -> irods::error
+    {
+        try {
+            auto& rei = get_rei(_effect_handler);
+            auto& conn = *rei.rsComm;
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+
+            // If the path is empty, either the pre-PEP detected that the client opened an
+            // existing data object for reading and returned early, or an error occurred.
+            // This avoids unnecessary catalog updates.
+            if (path_.empty()) {
+                return CODE(RULE_ENGINE_CONTINUE);
+            }
+
+            for_each_monitored_collection(conn, attrs, path_, [&](auto& _collection, const auto& _info) {
+                std::string p = fs::path{path_}.parent_path();
+                std::list<boost::any> args{&p};
+                const auto err = logical_quotas_recalculate_totals(_instance_name,
+                                                                   _instance_configs,
+                                                                   args,
+                                                                   _ms_param_array,
+                                                                   _effect_handler);
+
+                if (!err.ok()) {
+                    THROW(err.code(), err.result());
+                }
+            });
+        }
+        catch (const irods::exception& e) {
+            log_exception_message(e.what(), _effect_handler);
+            return e;
         }
         catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
@@ -1411,6 +1436,7 @@ namespace irods::handler
     auto pep_api_rm_coll::pre(const std::string& _instance_name,
                               const instance_configuration_map& _instance_configs,
                               std::list<boost::any>& _rule_arguments,
+                              MsParamArray* _ms_param_array,
                               irods::callback& _effect_handler) -> irods::error
     {
         reset();
@@ -1436,6 +1462,7 @@ namespace irods::handler
     auto pep_api_rm_coll::post(const std::string& _instance_name,
                                const instance_configuration_map& _instance_configs,
                                std::list<boost::any>& _rule_arguments,
+                               MsParamArray* _ms_param_array,
                                irods::callback& _effect_handler) -> irods::error
     {
         try {
