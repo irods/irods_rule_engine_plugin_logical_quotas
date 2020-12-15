@@ -6,6 +6,7 @@
 #include <irods/irods_re_serialization.hpp>
 #include <irods/irods_re_ruleexistshelper.hpp>
 #include <irods/irods_get_full_path_for_config_file.hpp>
+#include <irods/msParam.h>
 #include <irods/rodsError.h>
 #include <irods/rodsErrorTable.h>
 #include <irods/rodsLog.h>
@@ -30,6 +31,7 @@ namespace
     using handler_type = std::function<irods::error(const std::string&,
                                                     const irods::instance_configuration_map&,
                                                     std::list<boost::any>&,
+                                                    MsParamArray*,
                                                     irods::callback&)>;
 
     using handler_map_type = std::map<std::string_view, handler_type>;
@@ -41,6 +43,7 @@ namespace
         {"logical_quotas_set_maximum_number_of_data_objects",   handler::logical_quotas_set_maximum_number_of_data_objects},
         {"logical_quotas_set_maximum_size_in_bytes",            handler::logical_quotas_set_maximum_size_in_bytes},
         {"logical_quotas_start_monitoring_collection",          handler::logical_quotas_start_monitoring_collection},
+        {"logical_quotas_get_collection_status",                handler::logical_quotas_get_collection_status},
         {"logical_quotas_stop_monitoring_collection",           handler::logical_quotas_stop_monitoring_collection},
         {"logical_quotas_unset_maximum_number_of_data_objects", handler::logical_quotas_unset_maximum_number_of_data_objects},
         {"logical_quotas_unset_maximum_size_in_bytes",          handler::logical_quotas_unset_maximum_size_in_bytes},
@@ -57,20 +60,17 @@ namespace
         {"pep_api_data_obj_create_and_stat_pre",  handler::pep_api_data_obj_create_pre},
         {"pep_api_data_obj_create_post",          handler::pep_api_data_obj_create_post},
         {"pep_api_data_obj_create_pre",           handler::pep_api_data_obj_create_pre},
-        {"pep_api_data_obj_lseek_post",           handler::pep_api_data_obj_lseek::post},
-        {"pep_api_data_obj_lseek_pre",            handler::pep_api_data_obj_lseek::pre},
-        {"pep_api_data_obj_open_and_stat_post",   handler::pep_api_data_obj_open::post},
-        {"pep_api_data_obj_open_and_stat_pre",    handler::pep_api_data_obj_open::pre},
-        {"pep_api_data_obj_open_post",            handler::pep_api_data_obj_open::post},
-        {"pep_api_data_obj_open_pre",             handler::pep_api_data_obj_open::pre},
+        {"pep_api_data_obj_open_and_stat_pre",    handler::pep_api_data_obj_open_pre},
+        {"pep_api_data_obj_open_pre",             handler::pep_api_data_obj_open_pre},
         {"pep_api_data_obj_put_post",             handler::pep_api_data_obj_put::post},
         {"pep_api_data_obj_put_pre",              handler::pep_api_data_obj_put::pre},
         {"pep_api_data_obj_rename_post",          handler::pep_api_data_obj_rename::post},
         {"pep_api_data_obj_rename_pre",           handler::pep_api_data_obj_rename::pre},
         {"pep_api_data_obj_unlink_post",          handler::pep_api_data_obj_unlink::post},
         {"pep_api_data_obj_unlink_pre",           handler::pep_api_data_obj_unlink::pre},
-        {"pep_api_data_obj_write_post",           handler::pep_api_data_obj_write::post},
-        {"pep_api_data_obj_write_pre",            handler::pep_api_data_obj_write::pre},
+        {"pep_api_replica_close_post",            handler::pep_api_replica_close::post},
+        {"pep_api_replica_close_pre",             handler::pep_api_replica_close::pre},
+        {"pep_api_replica_open_pre",              handler::pep_api_data_obj_open_pre},
         {"pep_api_rm_coll_post",                  handler::pep_api_rm_coll::post},
         {"pep_api_rm_coll_pre",                   handler::pep_api_rm_coll::pre}
     };
@@ -183,11 +183,11 @@ namespace
                    irods::callback _effect_handler) -> irods::error
     {
         if (const auto iter = pep_handlers.find(_rule_name); iter != std::end(pep_handlers)) {
-            return (iter->second)(_instance_name, instance_configs, _rule_arguments, _effect_handler);
+            return (iter->second)(_instance_name, instance_configs, _rule_arguments, nullptr, _effect_handler);
         }
 
         if (const auto iter = logical_quotas_handlers.find(_rule_name); iter != std::end(logical_quotas_handlers)) {
-            return (iter->second)(_instance_name, instance_configs, _rule_arguments, _effect_handler);
+            return (iter->second)(_instance_name, instance_configs, _rule_arguments, nullptr, _effect_handler);
         }
 
         rodsLog(LOG_ERROR, "[logical_quotas] Rule not supported in rule engine plugin [rule => %s]", _rule_name.c_str());
@@ -197,6 +197,7 @@ namespace
 
     auto exec_rule_text_impl(const std::string& _instance_name,
                              std::string_view _rule_text,
+                             MsParamArray* _ms_param_array,
                              irods::callback _effect_handler) -> irods::error
     {
         rodsLog(LOG_DEBUG, "[logical_quotas] _rule_text => %s", _rule_text.data());
@@ -234,7 +235,7 @@ namespace
                     args.push_back(&value);
                 }
 
-                return (iter->second)(_instance_name, instance_configs, args, _effect_handler);
+                return (iter->second)(_instance_name, instance_configs, args, _ms_param_array, _effect_handler);
             }
 
             return ERROR(INVALID_OPERATION, fmt::format("Invalid operation [{}]", op));
@@ -291,7 +292,7 @@ auto plugin_factory(const std::string& _instance_name, const std::string& _conte
                                                          const std::string& _out_desc,
                                                          irods::callback _effect_handler)
     {
-        return exec_rule_text_impl(_instance_name, _rule_text, _effect_handler);
+        return exec_rule_text_impl(_instance_name, _rule_text, _ms_params, _effect_handler);
     };
 
     const auto exec_rule_expression_wrapper = [_instance_name](irods::default_re_ctx& _ctx,
@@ -299,7 +300,7 @@ auto plugin_factory(const std::string& _instance_name, const std::string& _conte
                                                                msParamArray_t* _ms_params,
                                                                irods::callback _effect_handler)
     {
-        return exec_rule_text_impl(_instance_name, _rule_text, _effect_handler);
+        return exec_rule_text_impl(_instance_name, _rule_text, _ms_params, _effect_handler);
     };
     // clang-format on
 

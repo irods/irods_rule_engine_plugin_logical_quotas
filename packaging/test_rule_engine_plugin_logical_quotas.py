@@ -411,63 +411,28 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
 
                 sandbox = self.admin.session_collection
                 self.logical_quotas_start_monitoring_collection(sandbox)
-                self.logical_quotas_set_maximum_number_of_data_objects(sandbox, '10')
-                self.logical_quotas_set_maximum_size_in_bytes(sandbox, str(len('hello, world!')))
+                self.logical_quotas_set_maximum_number_of_data_objects(sandbox, '1')
+                self.logical_quotas_set_maximum_size_in_bytes(sandbox, '15')
 
                 data_object = 'foo.txt'
 
                 # Create a new data object and write to it.
-                contents = 'hello, world!'
+                # Write enough bytes so that the next write will trigger a violation.
+                # This effectively disables all stream-based write operations.
+                contents = 'We can write any number of bytes because the quotas have not been violated!'
                 self.admin.assert_icommand(['istream', 'write', data_object], input=contents)
                 self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', [contents])
                 expected_number_of_objects = 1
                 expected_size_in_bytes = len(contents)
                 self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
 
-                # Trigger quota violation twice.
-                # This is a special case in that the catalog does not properly reflect the correct
-                # size of the data object and therefore, the REP must rely on dstream's seek operations
-                # to get the correct size of the data object. 
-                self.admin.assert_icommand_fail(['istream', 'write', data_object], input=contents + ' iRODS is great!')
-                self.admin.assert_icommand(['istream', 'read', data_object])
-                expected_number_of_objects = 1
-                expected_size_in_bytes = 0
-                self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
+                # Trigger quota violation (data object count exceeded).
+                self.admin.assert_icommand_fail(['istream', 'write', 'bar'], input=contents)
 
-                self.admin.assert_icommand_fail(['istream', 'write', data_object], input=contents + ' iRODS is great!')
-                self.admin.assert_icommand(['istream', 'read', data_object])
-                self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
-
-                # Restore the data object to it's original state.
-                self.admin.assert_icommand(['istream', 'write', data_object], input=contents)
-                self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', [contents])
-                expected_number_of_objects = 1
-                expected_size_in_bytes = len(contents)
-                self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
-
-                # Write in memory used by existing data object.
-                # The current totals should not change.
-                self.admin.assert_icommand(['istream', 'write', '-o', '7', '--no-trunc', data_object], input='iRODS!')
-                self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, iRODS!'])
-                self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
-
-                # Trigger quota violation.
+                # Trigger quota violation (byte count exceeded).
                 self.admin.assert_icommand_fail(['istream', 'write', '-a', data_object], input='This will trigger a quota violation.')
-                self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['hello, iRODS!'])
-                self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
 
-                # Truncate and write to existing data object.
-                contents = 'truncated'
-                self.admin.assert_icommand(['istream', 'write', data_object], input=contents)
-                self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', [contents])
-                expected_size_in_bytes = len(contents)
-                self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
-
-                # Append to existing data object.
-                contents = ' it!'
-                self.admin.assert_icommand(['istream', 'write', '-a', data_object], input=contents)
-                self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', ['truncated it!'])
-                expected_size_in_bytes = len('truncated it!')
+                # Show that the quotas have been enforced.
                 self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
 
                 self.logical_quotas_stop_monitoring_collection(sandbox)
@@ -525,6 +490,47 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
                 self.make_directory(dir_path, ['foo', 'bar'], file_size=75)
                 error_msg = 'Logical Quotas Policy Violation: Adding object exceeds maximum data size in byteslimit'
                 self.admin.assert_icommand_fail(['iput', '-r', dir_path], 'STDOUT', [error_msg])
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_logical_quotas_get_collection_status__issue_28(self):
+        config = IrodsConfig()
+        col = self.admin.session_collection
+
+        with lib.file_backed_up(config.server_config_path):
+            with lib.file_backed_up(config.client_environment_path):
+                self.enable_rule_engine_plugin(config)
+
+                self.logical_quotas_start_monitoring_collection(col)
+                self.logical_quotas_set_maximum_number_of_data_objects(col, '2')
+
+                # Add a data object to the collection.
+                data_object = 'foo'
+                contents = 'hello, iRODS!'
+                self.admin.assert_icommand(['istream', 'write', data_object], input=contents)
+                self.admin.assert_icommand(['istream', 'read', data_object], 'STDOUT', [contents])
+
+                # Fetch the quota status.
+                expected_output = ['"{0}":"2"'.format(self.maximum_number_of_data_objects_attribute()),
+                                   '"{0}":"1"'.format(self.total_number_of_data_objects_attribute()),
+                                   '"{0}":"{1}"'.format(self.total_size_in_bytes_attribute(), len(contents))]
+
+                op = json.dumps({'operation': 'logical_quotas_get_collection_status', 'collection': col})
+                self.admin.assert_icommand(['irule', '-r', 'irods_rule_engine_plugin-logical_quotas-instance', op, 'null', 'ruleExecOut'], 'STDOUT', expected_output)
+
+                op = 'logical_quotas_get_collection_status(*col, *out)'
+                op_args = '*col={0}%*out='.format(col)
+                self.admin.assert_icommand(['irule', '-r', 'irods_rule_engine_plugin-irods_rule_language-instance', op, op_args, '*out'], 'STDOUT', expected_output)
+
+                # Add another max quota and show that it appears in the output now.
+                self.logical_quotas_set_maximum_size_in_bytes(col, '100')
+                expected_output.append('"{0}":"100"'.format(self.maximum_size_in_bytes_attribute()))
+
+                op = json.dumps({'operation': 'logical_quotas_get_collection_status', 'collection': col})
+                self.admin.assert_icommand(['irule', '-r', 'irods_rule_engine_plugin-logical_quotas-instance', op, 'null', 'ruleExecOut'], 'STDOUT', expected_output)
+
+                op = 'logical_quotas_get_collection_status(*col, *out)'
+                op_args = '*col={0}%*out='.format(col)
+                self.admin.assert_icommand(['irule', '-r', 'irods_rule_engine_plugin-irods_rule_language-instance', op, op_args, '*out'], 'STDOUT', expected_output)
 
     #
     # Utility Functions
