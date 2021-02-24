@@ -68,6 +68,7 @@ namespace
         {"pep_api_data_obj_rename_pre",           handler::pep_api_data_obj_rename::pre},
         {"pep_api_data_obj_unlink_post",          handler::pep_api_data_obj_unlink::post},
         {"pep_api_data_obj_unlink_pre",           handler::pep_api_data_obj_unlink::pre},
+        {"pep_api_mod_avu_metadata_pre",          handler::pep_api_mod_avu_metadata_pre},
         {"pep_api_replica_close_post",            handler::pep_api_replica_close::post},
         {"pep_api_replica_close_pre",             handler::pep_api_replica_close::pre},
         {"pep_api_replica_open_pre",              handler::pep_api_data_obj_open_pre},

@@ -532,6 +532,47 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin([('othe
                 op_args = '*col={0}%*out='.format(col)
                 self.admin.assert_icommand(['irule', '-r', 'irods_rule_engine_plugin-irods_rule_language-instance', op, op_args, '*out'], 'STDOUT', expected_output)
 
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_adding_duplicate_attribute_names_with_different_values_or_units_is_not_allowed__issue_36(self):
+        config = IrodsConfig()
+        col = self.admin.session_collection
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+            self.logical_quotas_start_monitoring_collection(col)
+            self.logical_quotas_set_maximum_number_of_data_objects(col, '10')
+            self.logical_quotas_set_maximum_size_in_bytes(col, '1000')
+            self.admin.assert_icommand(['imeta', 'ls', '-C', col], 'STDOUT', [' ']) # Show the metadata.
+
+            # Assert that the quota values are what we expect them to be.
+            values = self.get_logical_quotas_attribute_values(col, include_max_values=True)
+            self.assertEquals(values[self.maximum_number_of_data_objects_attribute()], 10)
+            self.assertEquals(values[self.maximum_size_in_bytes_attribute()],          1000)
+            self.assertEquals(values[self.total_number_of_data_objects_attribute()],   0)
+            self.assertEquals(values[self.total_size_in_bytes_attribute()],            0)
+
+            expected_output = ['-169000 SYS_NOT_ALLOWED']
+
+            self.admin.assert_icommand(['imeta', 'add', '-C', col, self.maximum_number_of_data_objects_attribute(), '5'], 'STDERR', expected_output)
+            self.admin.assert_icommand(['imeta', 'add', '-C', col, self.maximum_number_of_data_objects_attribute(), '10', 'data_objects'], 'STDERR', expected_output)
+
+            self.admin.assert_icommand(['imeta', 'add', '-C', col, self.maximum_size_in_bytes_attribute(), '2000'], 'STDERR', expected_output)
+            self.admin.assert_icommand(['imeta', 'add', '-C', col, self.maximum_size_in_bytes_attribute(), '2000', 'bytes'], 'STDERR', expected_output)
+
+            self.admin.assert_icommand(['imeta', 'add', '-C', col, self.total_number_of_data_objects_attribute(), '5'], 'STDERR', expected_output)
+            self.admin.assert_icommand(['imeta', 'add', '-C', col, self.total_number_of_data_objects_attribute(), '10', 'data_objects'], 'STDERR', expected_output)
+
+            self.admin.assert_icommand(['imeta', 'add', '-C', col, self.total_size_in_bytes_attribute(), '2000'], 'STDERR', expected_output)
+            self.admin.assert_icommand(['imeta', 'add', '-C', col, self.total_size_in_bytes_attribute(), '2000', 'bytes'], 'STDERR', expected_output)
+
+            # Show that the quota values have not changed.
+            values = self.get_logical_quotas_attribute_values(col, include_max_values=True)
+            self.assertEquals(values[self.maximum_number_of_data_objects_attribute()], 10)
+            self.assertEquals(values[self.maximum_size_in_bytes_attribute()],          1000)
+            self.assertEquals(values[self.total_number_of_data_objects_attribute()],   0)
+            self.assertEquals(values[self.total_size_in_bytes_attribute()],            0)
+
     #
     # Utility Functions
     #
