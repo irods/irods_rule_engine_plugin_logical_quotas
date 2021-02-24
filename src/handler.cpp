@@ -1346,6 +1346,51 @@ namespace irods::handler
         return CODE(RULE_ENGINE_CONTINUE);
     }
 
+    auto pep_api_mod_avu_metadata_pre(const std::string& _instance_name,
+                                      const instance_configuration_map& _instance_configs,
+                                      std::list<boost::any>& _rule_arguments,
+                                      MsParamArray* _ms_param_array,
+                                      irods::callback& _effect_handler) -> irods::error
+    {
+        try {
+            auto& rei = get_rei(_effect_handler);
+            auto& conn = *rei.rsComm;
+            const auto* input = get_pointer<modAVUMetadataInp_t>(_rule_arguments);
+
+            if (std::string_view{"add"} != input->arg0 || !fs::server::is_collection(conn, input->arg2)) {
+                return CODE(RULE_ENGINE_CONTINUE);
+            }
+
+            const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+
+            const auto attr_list = {&attrs.maximum_number_of_data_objects(),
+                                    &attrs.maximum_size_in_bytes(),
+                                    &attrs.total_number_of_data_objects(),
+                                    &attrs.total_size_in_bytes()};
+
+            const auto iter = std::find_if(std::begin(attr_list), std::end(attr_list),
+                [attr_name = std::string_view{input->arg3}](const std::string* _attr) {
+                    return *_attr == attr_name;
+                });
+
+            if (iter != std::end(attr_list)) {
+                const auto gql = fmt::format("select META_COLL_ATTR_NAME "
+                                             "where COLL_NAME = '{}' and META_COLL_ATTR_NAME = '{}'",
+                                             input->arg2, **iter);
+
+                if (irods::query{&conn, gql}.size() > 0) {
+                    return ERROR(SYS_NOT_ALLOWED, "Logical Quotas Policy: Metadata attribute name already defined.");
+                }
+            }
+        }
+        catch (const std::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return CODE(RULE_ENGINE_CONTINUE);
+    }
+
     auto pep_api_replica_close::reset() noexcept -> void
     {
         path_.clear();
