@@ -11,7 +11,7 @@
 #include <irods/rodsError.h>
 #include <irods/rodsErrorTable.h>
 
-#include <json.hpp>
+#include <nlohmann/json.hpp>
 #include <fmt/format.h>
 #include <boost/any.hpp>
 
