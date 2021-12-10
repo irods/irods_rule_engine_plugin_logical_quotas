@@ -21,7 +21,7 @@
 #include <irods/replica.hpp>
 
 #include <fmt/format.h>
-#include <json.hpp>
+#include <nlohmann/json.hpp>
 
 #include <sys/types.h>
 #include <unistd.h>
