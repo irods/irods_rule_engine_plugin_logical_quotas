@@ -127,6 +127,9 @@ still be allowed to process the same PEPs without any issues.
 ```
 
 ## How To Use
+**IMPORTANT NOTE:** To invoke rules provided by the plugin, the only requirement is that the user be a *rodsadmin*. The *rodsadmin* user
+does not need permissions set on the target collection.
+
 The following operations are supported:
 - logical_quotas_count_total_number_of_data_objects
 - logical_quotas_count_total_size_in_bytes

@@ -9,9 +9,6 @@
 #include <irods/msParam.h>
 #include <irods/objDesc.hpp>
 #include <irods/rodsDef.h>
-#include <sys/types.h>
-#include <unistd.h>
-
 #include <irods/irods_query.hpp>
 #include <irods/irods_logger.hpp>
 #include <irods/filesystem.hpp>
@@ -25,6 +22,9 @@
 
 #include <fmt/format.h>
 #include <json.hpp>
+
+#include <sys/types.h>
+#include <unistd.h>
 
 #include <string>
 #include <string_view>
@@ -85,10 +85,6 @@ namespace
     //
 
     auto get_rei(irods::callback& _effect_handler) -> ruleExecInfo_t&;
-
-    auto get_collection_id(rsComm_t& _conn, fs::path _p) -> std::optional<std::string>;
-
-    auto get_collection_user_id(rsComm_t& _conn, const std::string& _collection_id) -> std::optional<std::string>;
 
     auto get_collection_username(rsComm_t& _conn, fs::path _p) -> std::optional<std::string>;
 
@@ -167,43 +163,9 @@ namespace
         return *rei;
     }
 
-    auto get_collection_id(rsComm_t& _conn, fs::path _p) -> std::optional<std::string>
-    {
-        const auto gql = fmt::format("select COLL_ID where COLL_NAME = '{}'", _p.c_str());
-
-        for (auto&& row : irods::query{&_conn, gql}) {
-            return row[0];
-        }
-
-        return std::nullopt;
-    }
-
-    auto get_collection_user_id(rsComm_t& _conn, const std::string& _collection_id) -> std::optional<std::string>
-    {
-        const auto gql = fmt::format("select COLL_ACCESS_USER_ID where COLL_ACCESS_COLL_ID = '{}' and COLL_ACCESS_NAME = 'own'", _collection_id);
-
-        for (auto&& row : irods::query{&_conn, gql}) {
-            return row[0];
-        }
-
-        return std::nullopt;
-    }
-
     auto get_collection_username(rsComm_t& _conn, fs::path _p) -> std::optional<std::string>
     {
-        auto coll_id = get_collection_id(_conn, _p);
-
-        if (!coll_id) {
-            return std::nullopt;
-        }
-
-        auto user_id = get_collection_user_id(_conn, *coll_id);
-
-        if (!user_id) {
-            return std::nullopt;
-        }
-
-        const auto gql = fmt::format("select USER_NAME where USER_ID = '{}'", *user_id);
+        const auto gql = fmt::format("select COLL_OWNER_NAME where COLL_NAME = '{}'", _p.c_str());
 
         for (auto&& row : irods::query{&_conn, gql}) {
             return row[0];
