@@ -20,7 +20,7 @@ def install_building_dependencies(externals_directory):
                       'irods-externals-clang-runtime6.0-0',
                       'irods-externals-fmt6.1.2-1',
                       'irods-externals-boost1.67.0-0',
-                      'irods-externals-json3.7.3-0']
+                      'irods-externals-json3.10.4-0']
 
     if externals_directory == 'None' or externals_directory is None:
         irods_python_ci_utilities.install_irods_core_dev_repository()
