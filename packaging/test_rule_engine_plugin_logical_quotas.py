@@ -606,6 +606,63 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
             self.user.assert_icommand_fail(['irule', '-r', 'irods_rule_engine_plugin-logical_quotas-instance', json_string, 'null', 'null'],
                                            'STDOUT', ['Logical Quotas Policy: Insufficient privileges'])
 
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_recalculating_totals_produce_the_correct_results_in_a_multi_replica_scenario__issue_48(self):
+        config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+            try:
+                # Create a resource hierarchy containing two unixfilesystem resources
+                # under a replication resource.
+                repl_resc = 'repl_resc_issue_48'
+                lib.create_replication_resource(repl_resc, self.admin1)
+
+                ufs0_resc = 'ufs0_resc_issue_48'
+                lib.create_ufs_resource(ufs0_resc, self.admin1)
+
+                ufs1_resc = 'ufs1_resc_issue_48'
+                lib.create_ufs_resource(ufs1_resc, self.admin1)
+
+                lib.add_child_resource(repl_resc, ufs0_resc, self.admin1)
+                lib.add_child_resource(repl_resc, ufs1_resc, self.admin1)
+
+                # Create three data objects under the replication resource. Two in the
+                # session collection and one in a sub-collection.
+                col = self.admin1.session_collection
+                self.logical_quotas_start_monitoring_collection(col)
+
+                # Show that the plugin did not detect any data objects.
+                self.assert_quotas(col, expected_number_of_objects=0, expected_size_in_bytes=0)
+
+                data_object_1 = os.path.join(col, 'data_object_1')
+                self.admin1.assert_icommand(['istream', 'write', '-R', repl_resc, data_object_1], input='12345')
+
+                data_object_2 = os.path.join(col, 'data_object_2')
+                self.admin1.assert_icommand(['istream', 'write', '-R', repl_resc, data_object_2], input='12345')
+
+                other_col = os.path.join(col, 'other_collection')
+                self.admin1.assert_icommand(['imkdir', other_col])
+
+                data_object_3 = os.path.join(other_col, 'data_object_3')
+                self.admin1.assert_icommand(['istream', 'write', '-R', repl_resc, data_object_3], input='12345')
+
+                # Show that the plugin correctly recalculates the total number of data objects
+                # and total size in bytes used by the data objects.
+                self.logical_quotas_recalculate_totals(col)
+                self.assert_quotas(col, expected_number_of_objects=3, expected_size_in_bytes=15)
+
+            finally:
+                for data_object in [data_object_1, data_object_2, data_object_3]:
+                    self.admin1.run_icommand(['irm', '-f', data_object])
+
+                lib.remove_child_resource(repl_resc, ufs0_resc, self.admin1)
+                lib.remove_child_resource(repl_resc, ufs1_resc, self.admin1)
+
+                for resc_name in [repl_resc, ufs0_resc, ufs1_resc]:
+                    self.admin1.run_icommand(['iadmin', 'rmresc', resc_name])
+
     #
     # Utility Functions
     #
