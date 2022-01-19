@@ -80,6 +80,25 @@ should be similar to the following:
 
 ## Configuration
 To enable, prepend the following plugin configuration to the list of rule engines in `/etc/irods/server_config.json`. 
+```javascript
+"rule_engines": [
+    {
+        "instance_name": "irods_rule_engine_plugin-logical_quotas-instance",
+        "plugin_name": "irods_rule_engine_plugin-logical_quotas",
+        "plugin_specific_configuration": {
+            "namespace": "irods::logical_quotas",
+            "metadata_attribute_names": {
+                "maximum_number_of_data_objects": "maximum_number_of_data_objects",
+                "maximum_size_in_bytes": "maximum_size_in_bytes",
+                "total_number_of_data_objects": "total_number_of_data_objects",
+                "total_size_in_bytes": "total_size_in_bytes"
+            }
+        }
+    },
+    
+    // ... Previously installed rule engine plugin configs ...
+]
+```
 
 The plugin configuration must be placed ahead of all plugins that define any of the following PEPs:
 - pep_api_data_obj_close_post
@@ -106,25 +125,16 @@ The plugin configuration must be placed ahead of all plugins that define any of 
 
 Even though this plugin will process PEPs first due to its positioning, subsequent Rule Engine Plugins (REP) will 
 still be allowed to process the same PEPs without any issues.
-```javascript
-"rule_engines": [
-    {
-        "instance_name": "irods_rule_engine_plugin-logical_quotas-instance",
-        "plugin_name": "irods_rule_engine_plugin-logical_quotas",
-        "plugin_specific_configuration": {
-            "namespace": "irods::logical_quotas",
-            "metadata_attribute_names": {
-                "maximum_number_of_data_objects": "maximum_number_of_data_objects",
-                "maximum_size_in_bytes": "maximum_size_in_bytes",
-                "total_number_of_data_objects": "total_number_of_data_objects",
-                "total_size_in_bytes": "total_size_in_bytes"
-            }
-        }
-    },
-    
-    // ... Previously installed rule engine plugin configs ...
-]
+
+Before you can start monitoring collections, you'll also need to add the following specific queries to your zone:
+```bash
+$ iadmin asq "select count(distinct data_id) from R_DATA_MAIN d inner join R_COLL_MAIN c on d.coll_id = c.coll_id where coll_name like ?" logical_quotas_count_data_objects_recursive
+$ iadmin asq "select sum(t.data_size) from (select data_id, data_size from R_DATA_MAIN d inner join R_COLL_MAIN c on d.coll_id = c.coll_id where coll_name like ? and data_is_dirty in ('1', '4') group by data_id, data_size) as t" logical_quotas_sum_data_object_sizes_recursive
 ```
+These queries are required due to a limitation in GenQuery's ability to distinguish between multiple replicas of the same data object.
+
+The _data_size_ specific query may result in an overcount of bytes on an actively used zone due to write-locked replicas of the same
+data object having different sizes. For this situation, consider using slightly larger quota limits.
 
 ## How To Use
 **IMPORTANT NOTE:** To invoke rules provided by the plugin, the only requirement is that the user be a *rodsadmin*. The *rodsadmin* user

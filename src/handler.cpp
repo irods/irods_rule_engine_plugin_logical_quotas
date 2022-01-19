@@ -10,6 +10,7 @@
 #include <irods/objDesc.hpp>
 #include <irods/rodsDef.h>
 #include <irods/irods_query.hpp>
+#include <irods/query_builder.hpp>
 #include <irods/filesystem.hpp>
 #include <irods/dstream.hpp>
 #include <irods/transport/default_transport.hpp>
@@ -560,16 +561,25 @@ namespace irods::handler
             }
 
             switch_user(rei, *username, [&] {
-                const auto gql = fmt::format("select count(DATA_NAME) where COLL_NAME = '{0}' || like '{0}/%'", path);
-                std::string objects;
+                std::vector args{path + '%'};
+                auto query = irods::experimental::query_builder{}
+                    .type(irods::experimental::query_type::specific)
+                    .bind_arguments(args)
+                    .build<RsComm>(*rei.rsComm, "logical_quotas_count_data_objects_recursive");
 
-                for (auto&& row : irods::query{rei.rsComm, gql}) {
+                std::string objects;
+                for (auto&& row : query) {
                     objects = row[0];
                 }
 
                 const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-                fs::server::set_metadata(*rei.rsComm, path, {attrs.total_number_of_data_objects(),  objects.empty() ? "0" : objects});
+                fs::server::set_metadata(*rei.rsComm, path, {attrs.total_number_of_data_objects(), objects.empty() ? "0" : objects});
             });
+        }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return ERROR(e.code(), e.what());
         }
         catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
@@ -597,16 +607,25 @@ namespace irods::handler
             }
 
             switch_user(rei, *username, [&] {
-                const auto gql = fmt::format("select sum(DATA_SIZE) where COLL_NAME = '{0}' || like '{0}/%'", path);
-                std::string bytes;
+                std::vector args{path + '%'};
+                auto query = irods::experimental::query_builder{}
+                    .type(irods::experimental::query_type::specific)
+                    .bind_arguments(args)
+                    .build<RsComm>(*rei.rsComm, "logical_quotas_sum_data_object_sizes_recursive");
 
-                for (auto&& row : irods::query{rei.rsComm, gql}) {
+                std::string bytes;
+                for (auto&& row : query) {
                     bytes = row[0];
                 }
 
                 const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
                 fs::server::set_metadata(*rei.rsComm, path, {attrs.total_size_in_bytes(), bytes.empty() ? "0" : bytes});
             });
+        }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return ERROR(e.code(), e.what());
         }
         catch (const std::exception& e) {
             log_exception_message(e.what(), _effect_handler);
