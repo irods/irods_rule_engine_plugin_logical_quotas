@@ -679,6 +679,46 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
                     for resc_name in [repl_resc, ufs0_resc, ufs1_resc]:
                         self.admin1.run_icommand(['iadmin', 'rmresc', resc_name])
 
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_group_owned_collections_do_not_require_the_admin_to_manually_change_acls__issue_35(self):
+        config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            with lib.file_backed_up(config.client_environment_path):
+                self.enable_rule_engine_plugin(config)
+
+                zone_name = self.admin1.zone_name
+                group_name = 'testgroup_issue_36'
+                group_home_col = os.path.join('/', zone_name, 'home', group_name)
+
+                try:
+                    # Create a new empty group.
+                    # This will result in a new home collection being created for the group
+                    # with only the group having OWN permissions on it.
+                    self.admin1.assert_icommand(['iadmin', 'mkgroup', group_name])
+
+                    # Show that only the group has permissions on the group's home collection.
+                    _, out, _ = self.admin1.assert_icommand(['ils', '-A', group_home_col], 'STDOUT', [' '])
+                    self.assertIn('/{0}/home/{1}:'.format(zone_name, group_name), out)
+                    self.assertIn('        ACL - g:{0}#{1}:own'.format(group_name, zone_name), out)
+                    self.assertNotIn('        ACL - {0}#{1}:'.format(self.admin1.username, zone_name), out)
+
+                    # Show that the admin can invoke rules on the group's home collection without
+                    # needing to manually adjust ACLs on it.
+                    json_string = json.dumps({'operation': 'logical_quotas_start_monitoring_collection', 'collection': group_home_col})
+                    self.admin2.assert_icommand(['irule', '-r', 'irods_rule_engine_plugin-logical_quotas-instance', json_string, 'null', 'null'])
+
+                    self.admin1.assert_icommand(['imeta', 'ls', '-C', group_home_col], 'STDOUT', [
+                        'attribute: irods::logical_quotas::total_size_in_bytes',
+                        'attribute: irods::logical_quotas::total_number_of_data_objects'
+                    ])
+
+                    json_string = json.dumps({'operation': 'logical_quotas_stop_monitoring_collection', 'collection': group_home_col})
+                    self.admin2.assert_icommand(['irule', '-r', 'irods_rule_engine_plugin-logical_quotas-instance', json_string, 'null', 'null'])
+
+                finally:
+                    self.admin1.run_icommand(['iadmin', 'rmgroup', group_name])
+
     #
     # Utility Functions
     #
