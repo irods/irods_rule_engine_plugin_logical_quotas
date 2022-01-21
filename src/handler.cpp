@@ -12,9 +12,6 @@
 #include <irods/irods_query.hpp>
 #include <irods/query_builder.hpp>
 #include <irods/filesystem.hpp>
-#include <irods/dstream.hpp>
-#include <irods/transport/default_transport.hpp>
-#include <irods/irods_at_scope_exit.hpp>
 #include <irods/irods_get_l1desc.hpp>
 #include <irods/modAVUMetadata.h>
 #include <irods/rodsErrorTable.h>
@@ -125,8 +122,6 @@ namespace
                              std::unordered_map<std::string, irods::instance_configuration>& _instance_configs,
                              std::function<std::vector<const std::string*> (const irods::attributes& _attrs)> _func) -> irods::error;
 
-    auto log_exception_message(const char* _msg, irods::callback& _effect_handler) -> void;
-
     template <typename T>
     auto get_pointer(std::list<boost::any>& _rule_arguments, int _index = 2) -> T*;
 
@@ -207,7 +202,7 @@ namespace
 
             if (total + _delta > iter->second) {
                 throw irods::logical_quotas_error{"Logical Quotas Policy Violation: Adding object exceeds maximum number of objects limit",
-                                                  SYS_RESC_QUOTA_EXCEEDED};
+                                                  SYS_NOT_ALLOWED};
             }
         }
     }
@@ -223,7 +218,7 @@ namespace
 
             if (total + _delta > iter->second) {
                 throw irods::logical_quotas_error{"Logical Quotas Policy Violation: Adding object exceeds maximum data size in bytes limit",
-                                                  SYS_RESC_QUOTA_EXCEEDED};
+                                                  SYS_NOT_ALLOWED};
             }
         }
     }
@@ -340,18 +335,18 @@ namespace
             addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.error_code(), e.what());
             return ERROR(e.error_code(), e.what());
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
         return SUCCESS();
-    }
-
-    auto log_exception_message(const char* _msg, irods::callback& _effect_handler) -> void
-    {
-        rodsLog(LOG_ERROR, _msg);
-        addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, _msg);
     }
 
     template <typename T>
@@ -547,8 +542,14 @@ namespace irods::handler
             addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.error_code(), e.what());
             return ERROR(e.error_code(), e.what());
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -624,10 +625,11 @@ namespace irods::handler
         catch (const irods::exception& e) {
             rodsLog(LOG_ERROR, e.what());
             addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
-            return ERROR(e.code(), e.what());
+            return e;
         }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -683,10 +685,11 @@ namespace irods::handler
         catch (const irods::exception& e) {
             rodsLog(LOG_ERROR, e.what());
             addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
-            return ERROR(e.code(), e.what());
+            return e;
         }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -749,8 +752,14 @@ namespace irods::handler
             addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.error_code(), e.what());
             return ERROR(e.error_code(), e.what());
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -795,8 +804,14 @@ namespace irods::handler
             addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.error_code(), e.what());
             return ERROR(e.error_code(), e.what());
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -875,7 +890,7 @@ namespace irods::handler
                 std::tie(data_objects_, size_in_bytes_) = compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
             }
             else {
-                throw logical_quotas_error{"Logical Quotas Policy: Invalid object type", SYS_INTERNAL_ERR};
+                throw logical_quotas_error{"Logical Quotas Policy: Invalid object type", INVALID_OBJECT_TYPE};
             }
 
             for_each_monitored_collection(conn, attrs, input->destDataObjInp.objPath, [&conn, &attrs](auto& _collection, const auto& _info) {
@@ -884,11 +899,18 @@ namespace irods::handler
             });
         }
         catch (const logical_quotas_error& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.error_code(), e.what());
+            return ERROR(e.error_code(), e.what());
+        }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
         }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -911,8 +933,14 @@ namespace irods::handler
                 update_data_object_count_and_size(conn, attrs, _collection, _info, data_objects_, size_in_bytes_);
             });
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -936,11 +964,18 @@ namespace irods::handler
             });
         }
         catch (const logical_quotas_error& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.error_code(), e.what());
+            return ERROR(e.error_code(), e.what());
+        }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
         }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -963,8 +998,14 @@ namespace irods::handler
                 update_data_object_count_and_size(conn, attrs, _collection, _info, 1, 0);
             });
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -1008,11 +1049,18 @@ namespace irods::handler
             }
         }
         catch (const logical_quotas_error& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.error_code(), e.what());
+            return ERROR(e.error_code(), e.what());
+        }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
         }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -1042,8 +1090,14 @@ namespace irods::handler
                 });
             }
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -1085,7 +1139,7 @@ namespace irods::handler
                 std::tie(data_objects_, size_in_bytes_) = compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
             }
             else {
-                throw logical_quotas_error{"Logical Quotas Policy: Invalid object type", SYS_INTERNAL_ERR};
+                throw logical_quotas_error{"Logical Quotas Policy: Invalid object type", INVALID_OBJECT_TYPE};
             }
 
             const auto in_violation = [&](const auto&, const auto& _info)
@@ -1131,11 +1185,18 @@ namespace irods::handler
             }
         }
         catch (const logical_quotas_error& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.error_code(), e.what());
+            return ERROR(e.error_code(), e.what());
+        }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
         }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -1220,11 +1281,18 @@ namespace irods::handler
             }
         }
         catch (const logical_quotas_error& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.error_code(), e.what());
+            return ERROR(e.error_code(), e.what());
+        }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
         }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -1254,8 +1322,14 @@ namespace irods::handler
                 size_in_bytes_ = fs::server::data_object_size(conn, input->objPath);
             }
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -1278,8 +1352,14 @@ namespace irods::handler
                 update_data_object_count_and_size(conn, attrs, _collection, _info, -1, -size_in_bytes_);
             });
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -1321,11 +1401,18 @@ namespace irods::handler
             });
         }
         catch (const logical_quotas_error& e) {
-            log_exception_message(e.what(), _effect_handler);
-            return ERROR(SYS_INVALID_INPUT_PARAM, e.what());
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.error_code(), e.what());
+            return ERROR(e.error_code(), e.what());
+        }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
         }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -1359,8 +1446,14 @@ namespace irods::handler
 
             path_ = l1desc.dataObjInfo->objPath;
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -1400,11 +1493,13 @@ namespace irods::handler
             });
         }
         catch (const irods::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.client_display_what());
             return e;
         }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -1448,6 +1543,11 @@ namespace irods::handler
                 }
             }
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
             rodsLog(LOG_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
@@ -1484,8 +1584,14 @@ namespace irods::handler
 
             path_ = l1desc.dataObjInfo->objPath;
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -1525,11 +1631,13 @@ namespace irods::handler
             });
         }
         catch (const irods::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.client_display_what());
             return e;
         }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -1560,8 +1668,14 @@ namespace irods::handler
                 std::tie(data_objects_, size_in_bytes_) = compute_data_object_count_and_size(conn, input->collName);
             }
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
@@ -1584,8 +1698,14 @@ namespace irods::handler
                 update_data_object_count_and_size(conn, attrs, _collection, _info, -data_objects_, -size_in_bytes_);
             });
         }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
         catch (const std::exception& e) {
-            log_exception_message(e.what(), _effect_handler);
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
             return ERROR(RE_RUNTIME_ERROR, e.what());
         }
 
