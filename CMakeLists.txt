@@ -38,6 +38,7 @@ include(UseLibCXX)
 
 find_package(nlohmann_json "3.6.1" REQUIRED)
 find_package(Threads REQUIRED)
+find_package(OpenSSL REQUIRED COMPONENTS Crypto SSL)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fpermissive>)
