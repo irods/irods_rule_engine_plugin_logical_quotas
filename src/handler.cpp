@@ -1694,5 +1694,86 @@ namespace irods::handler
 
         return CODE(RULE_ENGINE_CONTINUE);
     }
+
+    auto pep_api_touch::reset() noexcept -> void
+    {
+        path_.clear();
+        exists_ = false;
+    }
+
+    auto pep_api_touch::pre(const std::string& _instance_name,
+                            const instance_configuration_map& _instance_configs,
+                            std::list<boost::any>& _rule_arguments,
+                            MsParamArray* _ms_param_array,
+                            irods::callback& _effect_handler) -> irods::error
+    {
+        reset();
+
+        try {
+            auto* input = get_pointer<BytesBuf>(_rule_arguments);
+            auto& rei = get_rei(_effect_handler);
+            auto& conn = *rei.rsComm;
+
+            const auto json_input = nlohmann::json::parse(std::string_view(static_cast<char*>(input->buf), input->len));
+            path_ = json_input.at("logical_path").get<std::string>();
+            exists_ = fs::server::exists(conn, path_);
+        }
+        catch (const fs::filesystem_error& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code().value(), e.what());
+            return ERROR(e.code().value(), e.what());
+        }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
+        catch (const std::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return CODE(RULE_ENGINE_CONTINUE);
+    }
+
+    auto pep_api_touch::post(const std::string& _instance_name,
+                             const instance_configuration_map& _instance_configs,
+                             std::list<boost::any>& _rule_arguments,
+                             MsParamArray* _ms_param_array,
+                             irods::callback& _effect_handler) -> irods::error
+    {
+        try {
+            auto& rei = get_rei(_effect_handler);
+            auto& conn = *rei.rsComm;
+
+            // Verify that the target object was created. This is necessary because the touch API
+            // does not always result in a new data object (i.e. no_create JSON option).
+            if (!exists_ && fs::server::exists(conn, path_)) {
+                const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+
+                for_each_monitored_collection(conn, attrs, path_, [&conn, &attrs](const auto& _collection, const auto& _info) {
+                    update_data_object_count_and_size(conn, attrs, _collection, _info, 1, 0);
+                });
+            }
+        }
+        catch (const fs::filesystem_error& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code().value(), e.what());
+            return ERROR(e.code().value(), e.what());
+        }
+        catch (const irods::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code(), e.client_display_what());
+            return e;
+        }
+        catch (const std::exception& e) {
+            rodsLog(LOG_ERROR, e.what());
+            addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
+            return ERROR(RE_RUNTIME_ERROR, e.what());
+        }
+
+        return CODE(RULE_ENGINE_CONTINUE);
+    }
 } // namespace irods::handler
 

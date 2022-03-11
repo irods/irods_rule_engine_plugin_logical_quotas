@@ -76,7 +76,9 @@ namespace
         {"pep_api_replica_close_pre",             handler::pep_api_replica_close::pre},
         {"pep_api_replica_open_pre",              handler::pep_api_data_obj_open_pre},
         {"pep_api_rm_coll_post",                  handler::pep_api_rm_coll::post},
-        {"pep_api_rm_coll_pre",                   handler::pep_api_rm_coll::pre}
+        {"pep_api_rm_coll_pre",                   handler::pep_api_rm_coll::pre},
+        {"pep_api_touch_post",                    handler::pep_api_touch::post},
+        {"pep_api_touch_pre",                     handler::pep_api_touch::pre}
     };
     // clang-format on
 

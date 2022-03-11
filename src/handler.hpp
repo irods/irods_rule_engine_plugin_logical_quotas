@@ -276,6 +276,30 @@ namespace irods::handler
         inline static size_type data_objects_ = 0;
         inline static size_type size_in_bytes_ = 0;
     }; // class pep_api_rm_coll
+
+    class pep_api_touch final
+    {
+    public:
+        pep_api_touch() = delete;
+
+        static auto reset() noexcept -> void;
+
+        static auto pre(const std::string& _instance_name,
+                        const instance_configuration_map& _instance_configs,
+                        std::list<boost::any>& _rule_arguments,
+                        MsParamArray* _ms_param_array,
+                        irods::callback& _effect_handler) -> irods::error;
+
+        static auto post(const std::string& _instance_name,
+                         const instance_configuration_map& _instance_configs,
+                         std::list<boost::any>& _rule_arguments,
+                         MsParamArray* _ms_param_array,
+                         irods::callback& _effect_handler) -> irods::error;
+
+    private:
+        inline static std::string path_;
+        inline static bool exists_ = false;
+    }; // class pep_api_touch
 } // namespace irods::handler
 
 #endif // IRODS_LOGICAL_QUOTAS_HANDLER_HPP
