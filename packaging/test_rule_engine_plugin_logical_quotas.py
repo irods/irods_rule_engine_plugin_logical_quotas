@@ -704,6 +704,24 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
                     self.admin1.run_icommand(['iadmin', 'rmgroup', group_name])
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_plugin_supports_touch_api_PEPs__issue_62(self):
+        config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+            col = self.user.session_collection
+            self.logical_quotas_start_monitoring_collection(col)
+
+            # Show that the REP hasn't detected any data objects in the monitored collection.
+            self.assert_quotas(col, expected_number_of_objects=0, expected_size_in_bytes=0)
+
+            # Show that after creating a new data object via itouch, the REP correctly in increments
+            # the data object count by one.
+            self.user.assert_icommand(['itouch', 'foo'])
+            self.assert_quotas(col, expected_number_of_objects=1, expected_size_in_bytes=0)
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_plugin_does_not_return_an_error_when_exec_rule_is_invoked_by_non_administrators__issue_63(self):
         # This test verifies that regular users are allowed to invoke logical quotas rules indirectly.
         # That is, a non-admin user will not be blocked by the REP unless they try to invoke a logical
