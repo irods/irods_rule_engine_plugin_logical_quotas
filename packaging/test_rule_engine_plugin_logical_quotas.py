@@ -570,9 +570,10 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
     def test_executing_logical_quotas_rules_do_not_fail_when_group_permissions_are_present__issue_46(self):
         config = IrodsConfig()
         col = self.admin1.session_collection
-        group = 'rodsadmin'
+        group = 'issue_46_group'
 
         try:
+            self.admin1.assert_icommand(['iadmin', 'mkgroup', group])
             self.admin1.assert_icommand(['iadmin', 'atg', group, self.admin2.username])
             self.admin1.assert_icommand(['ichmod', 'own', group, col])
 
@@ -591,6 +592,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
         finally:
             self.admin1.run_icommand(['ichmod', 'null', group, col])
             self.admin1.run_icommand(['iadmin', 'rfg', group, self.admin2.username])
+            self.admin1.run_icommand(['iadmin', 'rmgroup', group])
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_executing_logical_quotas_rules_require_that_the_user_be_an_administrator(self):
