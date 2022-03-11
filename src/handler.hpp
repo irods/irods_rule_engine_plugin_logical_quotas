@@ -1,5 +1,5 @@
-#ifndef IRODS_LOGICAL_QUOTAS_HANDLER
-#define IRODS_LOGICAL_QUOTAS_HANDLER
+#ifndef IRODS_LOGICAL_QUOTAS_HANDLER_HPP
+#define IRODS_LOGICAL_QUOTAS_HANDLER_HPP
 
 #include "instance_configuration.hpp"
 
@@ -278,5 +278,5 @@ namespace irods::handler
     }; // class pep_api_rm_coll
 } // namespace irods::handler
 
-#endif // IRODS_LOGICAL_QUOTAS_HANDLER
+#endif // IRODS_LOGICAL_QUOTAS_HANDLER_HPP
 
