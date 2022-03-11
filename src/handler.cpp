@@ -2,6 +2,7 @@
 
 #include "logical_quotas_error.hpp"
 #include "switch_user_error.hpp"
+#include "utilities.hpp"
 
 #include <irods/execCmd.h>
 #include <irods/irods_re_plugin.hpp>
@@ -83,8 +84,6 @@ namespace
     // Function Prototypes
     //
 
-    auto get_rei(irods::callback& _effect_handler) -> ruleExecInfo_t&;
-
     auto get_collection_username(rsComm_t& _conn, fs::path _p) -> std::optional<std::string>;
 
     auto get_monitored_collection_info(rsComm_t& _conn,
@@ -149,18 +148,6 @@ namespace
     //
     // Function Implementations
     //
-
-    auto get_rei(irods::callback& _effect_handler) -> ruleExecInfo_t&
-    {
-        ruleExecInfo_t* rei{};
-
-        if (const auto result = _effect_handler("unsafe_ms_ctx", &rei); !result.ok()) {
-            const auto error_code = static_cast<irods::logical_quotas_error::error_code_type>(result.code());
-            throw irods::logical_quotas_error{"Logical Quotas Policy: Failed to get rule execution information", error_code};
-        }
-
-        return *rei;
-    }
 
     auto get_collection_username(rsComm_t& _conn, fs::path _p) -> std::optional<std::string>
     {
@@ -358,10 +345,6 @@ namespace
     template <typename Function>
     auto switch_user(ruleExecInfo_t& _rei, std::string_view _username, Function _func) -> void
     {
-        if (_rei.rsComm->clientUser.authInfo.authFlag < LOCAL_PRIV_USER_AUTH) {
-            throw irods::switch_user_error{"Logical Quotas Policy: Insufficient privileges", CAT_INSUFFICIENT_PRIVILEGE_LEVEL};
-        }
-
         irods::experimental::scoped_client_identity sci{*_rei.rsComm, _username};
         _func();
     }
