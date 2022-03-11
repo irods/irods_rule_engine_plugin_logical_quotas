@@ -1,11 +1,14 @@
 #include "instance_configuration.hpp"
+
 #include "handler.hpp"
+#include "utilities.hpp"
 
 #include <irods/irods_plugin_context.hpp>
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_re_serialization.hpp>
 #include <irods/irods_re_ruleexistshelper.hpp>
 #include <irods/irods_get_full_path_for_config_file.hpp>
+#include <irods/irods_rs_comm_query.hpp>
 #include <irods/msParam.h>
 #include <irods/rodsError.h>
 #include <irods/rodsErrorTable.h>
@@ -221,7 +224,7 @@ namespace
 
             rodsLog(LOG_DEBUG, "[logical_quotas] json_arguments => %s", json_args.dump().data());
 
-            const auto op = json_args.at("operation").get<std::string>();
+            const auto& op = json_args.at("operation").get_ref<const std::string&>();
 
             if (const auto iter = logical_quotas_handlers.find(op); iter != std::end(logical_quotas_handlers)) {
                 auto collection = json_args.at("collection").get<std::string>();
@@ -293,6 +296,10 @@ auto plugin_factory(const std::string& _instance_name, const std::string& _conte
                                                          const std::string& _out_desc,
                                                          irods::callback _effect_handler)
     {
+        if (const auto& rei = get_rei(_effect_handler); !irods::is_privileged_client(*rei.rsComm)) {
+            return ERROR(CAT_INSUFFICIENT_PRIVILEGE_LEVEL, "Logical Quotas Policy: Insufficient privileges");
+        }
+
         return exec_rule_text_impl(_instance_name, _rule_text, _ms_params, _effect_handler);
     };
 
