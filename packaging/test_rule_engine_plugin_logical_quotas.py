@@ -28,7 +28,29 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
         self.admin2 = self.admin_sessions[1]
         self.user = self.user_sessions[0]
 
+        count_data_objects = str('select count(distinct data_id) from R_DATA_MAIN d ' +
+                                 'inner join R_COLL_MAIN c on d.coll_id = c.coll_id ' +
+                                 'where coll_name like ?')
+
+        self.admin1.assert_icommand(['iadmin', 'asq', count_data_objects,
+                                    'logical_quotas_count_data_objects_recursive'])
+
+        sum_data_object_sizes = str('select sum(t.data_size) from (' +
+                                    'select data_id, data_size from R_DATA_MAIN d ' +
+                                    'inner join R_COLL_MAIN c on d.coll_id = c.coll_id ' +
+                                        'where coll_name like ? and data_is_dirty in (\'1\', \'4\') ' +
+                                    'group by data_id, data_size) as t')
+
+        self.admin1.assert_icommand(['iadmin', 'asq', sum_data_object_sizes,
+                                    'logical_quotas_sum_data_object_sizes_recursive'])
+
     def tearDown(self):
+        self.admin1.assert_icommand(['iadmin', 'rsq',
+                                    'logical_quotas_sum_data_object_sizes_recursive'])
+
+        self.admin1.assert_icommand(['iadmin', 'rsq',
+                                    'logical_quotas_count_data_objects_recursive'])
+
         super(Test_Rule_Engine_Plugin_Logical_Quotas, self).tearDown()
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
