@@ -13,14 +13,16 @@ def add_cmake_to_front_of_path():
     os.environ['PATH'] = os.pathsep.join([cmake_path, os.environ['PATH']])
 
 def install_building_dependencies(externals_directory):
-    externals_list = ['irods-externals-cmake3.21.4-0',
-                      'irods-externals-clang6.0-0',
-                      'irods-externals-libarchive3.3.2-1',
-                      'irods-externals-avro1.9.0-0',
-                      'irods-externals-clang-runtime6.0-0',
-                      'irods-externals-fmt6.1.2-1',
-                      'irods-externals-boost1.67.0-0',
-                      'irods-externals-json3.10.4-0']
+    externals_list = [
+        'irods-externals-avro1.11.0-0',
+        'irods-externals-boost1.78.0-0',
+        'irods-externals-clang-runtime13.0.0-0',
+        'irods-externals-clang13.0.0-0',
+        'irods-externals-cmake3.21.4-0',
+        'irods-externals-fmt8.1.1-0',
+        'irods-externals-json3.10.4-0',
+        'irods-externals-libarchive3.5.2-0'
+        ]
 
     if externals_directory == 'None' or externals_directory is None:
         irods_python_ci_utilities.install_irods_core_dev_repository()
