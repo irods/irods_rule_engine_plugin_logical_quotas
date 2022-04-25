@@ -135,9 +135,9 @@ namespace
                 }
             };
 
-            for (const auto& re : config.at(irods::CFG_PLUGIN_CONFIGURATION_KW).at(irods::PLUGIN_TYPE_RULE_ENGINE)) {
-                if (_instance_name == re.at(irods::CFG_INSTANCE_NAME_KW).get<std::string>()) {
-                    const auto& plugin_config = re.at(irods::CFG_PLUGIN_SPECIFIC_CONFIGURATION_KW);
+            for (const auto& re : config.at(irods::KW_CFG_PLUGIN_CONFIGURATION).at(irods::KW_CFG_PLUGIN_TYPE_RULE_ENGINE)) {
+                if (_instance_name == re.at(irods::KW_CFG_INSTANCE_NAME).get<std::string>()) {
+                    const auto& plugin_config = re.at(irods::KW_CFG_PLUGIN_SPECIFIC_CONFIGURATION);
 
                     const auto& attr_names = [&plugin_config] {
                         try {
