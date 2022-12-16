@@ -55,7 +55,6 @@ target_compile_definitions(${PLUGIN} PRIVATE ${IRODS_COMPILE_DEFINITIONS}
                                              ${IRODS_COMPILE_DEFINITIONS_PRIVATE}
                                              IRODS_QUERY_ENABLE_SERVER_SIDE_API
                                              IRODS_ENABLE_SYSLOG
-                                             IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
                                              IRODS_IO_TRANSPORT_ENABLE_SERVER_SIDE_API
                                              IRODS_REPLICA_ENABLE_SERVER_SIDE_API
                                              SPDLOG_FMT_EXTERNAL

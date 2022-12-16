@@ -1,25 +1,29 @@
 #include "handler.hpp"
 
 #include "logical_quotas_error.hpp"
-#include "switch_user_error.hpp"
 #include "utilities.hpp"
 
+#include <irods/client_connection.hpp>
 #include <irods/execCmd.h>
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_state_table.h>
 #include <irods/msParam.h>
+#include <irods/genQuery.h>
 #include <irods/objDesc.hpp>
 #include <irods/rodsDef.h>
 #include <irods/irods_query.hpp>
 #include <irods/irods_logger.hpp>
 #include <irods/query_builder.hpp>
-#include <irods/filesystem.hpp>
 #include <irods/irods_get_l1desc.hpp>
 #include <irods/modAVUMetadata.h>
 #include <irods/rodsErrorTable.h>
 #include <irods/replica.hpp>
 #include <irods/scoped_client_identity.hpp>
 #include <irods/scoped_permission.hpp>
+#include <irods/filesystem.hpp>
+
+#define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
+#include <irods/filesystem.hpp>
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
@@ -39,8 +43,8 @@ namespace
 {
     // clang-format off
     namespace fs                 = irods::experimental::filesystem;
+    namespace log                = irods::experimental::log;
 
-    using log                    = irods::experimental::log;
     using size_type              = irods::handler::size_type;
     using quotas_info_type       = std::unordered_map<std::string, size_type>;
     using file_position_map_type = std::unordered_map<std::string, irods::handler::file_position_type>;
@@ -124,9 +128,6 @@ namespace
 
     template <typename T>
     auto get_pointer(std::list<boost::any>& _rule_arguments, int _index = 2) -> T*;
-
-    template <typename Function>
-    auto switch_user(ruleExecInfo_t& _rei, std::string_view _username, Function _func) -> void;
 
     template <typename Function>
     auto for_each_monitored_collection(rsComm_t& _conn,
@@ -298,36 +299,19 @@ namespace
 
             auto& rei = get_rei(_effect_handler);
             auto& conn = *rei.rsComm;
-            auto username = get_collection_username(conn, path);
 
-            if (!username) {
-                throw std::runtime_error{fmt::format("Logical Quotas Policy: No owner found for path [{}]", path)};
-            }
+			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+			const auto info = get_monitored_collection_info(conn, attrs, path);
 
-            const auto func = [&] {
-                const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-                const auto info = get_monitored_collection_info(conn, attrs, path);
-
-                for (auto&& attribute_name : _func(attrs)) {
-                    if (const auto iter = info.find(*attribute_name); iter != std::end(info)) {
-                        const auto value = get_attribute_value<size_type>(info, *attribute_name);
-                        fs::server::remove_metadata(conn, path, {*attribute_name,  std::to_string(value)});
-                    }
-                }
-            };
-
-            if (is_group(*rei.rsComm, *username)) {
-                irods::experimental::scoped_permission sp{*rei.rsComm, path, fs::perms::write};
-                func();
-            }
-            else {
-                switch_user(rei, *username, func);
-            }
-        }
-        catch (const irods::switch_user_error& e) {
-            return log_logical_quotas_exception(e, _effect_handler);
-        }
-        catch (const irods::exception& e) {
+			irods::experimental::client_connection client_conn;
+			for (auto&& attribute_name : _func(attrs)) {
+				if (const auto iter = info.find(*attribute_name); iter != std::end(info)) {
+					const auto value = get_attribute_value<size_type>(info, *attribute_name);
+					fs::client::remove_metadata(fs::admin, client_conn, path, {*attribute_name, std::to_string(value)});
+				}
+			}
+		}
+		catch (const irods::exception& e) {
             return log_irods_exception(e, _effect_handler);
         }
         catch (const std::exception& e) {
@@ -341,13 +325,6 @@ namespace
     auto get_pointer(std::list<boost::any>& _rule_arguments, int _index) -> T*
     {
         return boost::any_cast<T*>(*std::next(std::begin(_rule_arguments), _index));
-    }
-
-    template <typename Function>
-    auto switch_user(ruleExecInfo_t& _rei, std::string_view _username, Function _func) -> void
-    {
-        irods::experimental::scoped_client_identity sci{*_rei.rsComm, _username};
-        _func();
     }
 
     template <typename Function>
@@ -441,6 +418,55 @@ namespace
         addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, RE_RUNTIME_ERROR, e.what());
         return ERROR(RE_RUNTIME_ERROR, e.what());
     }
+
+	auto get_quota_value_for_collection(RcComm& _conn, const std::string& _coll_path, const std::string& _quota_name)
+		-> std::tuple<std::string, irods::error>
+	{
+		auto ret_error = SUCCESS();
+
+		std::string value_out;
+
+		// Query will be performed using client connection, ie. with administrative privilege.
+
+		// Initialize query conditions and column for selection.
+		GenQueryInp input{};
+		GenQueryOut* output{};
+		addInxIval(&input.selectInp, COL_META_COLL_ATTR_VALUE, 0);
+		addInxVal(&input.sqlCondInp, COL_COLL_NAME, fmt::format("= '{}'", _coll_path).c_str());
+		addInxVal(&input.sqlCondInp, COL_META_COLL_ATTR_NAME, fmt::format("= '{}'", _quota_name).c_str());
+
+		input.maxRows = MAX_SQL_ROWS;
+
+		while (true) {
+			if (const int ec = rcGenQuery(&_conn, &input, &output); ec < 0) {
+				if (ec != CAT_NO_ROWS_FOUND) {
+					ret_error = ERROR(ec, "rcGenQuery failed.");
+				}
+				break;
+			}
+
+			for (int row = 0; row < output->rowCnt; ++row) {
+				for (int attr = 0; attr < output->attriCnt; ++attr) {
+					const SqlResult* sql_result = &output->sqlResult[attr];
+					const char* value = sql_result->value + (row * sql_result->len);
+					value_out = value;
+				}
+			}
+
+			if (output->continueInx <= 0) {
+				break;
+			}
+			input.continueInx = output->continueInx;
+
+			clearGenQueryOut(output);
+		}
+
+		clearGenQueryInp(&input);
+		freeGenQueryOut(&output);
+
+		return std::make_tuple(value_out, ret_error);
+	}
+
 } // anonymous namespace
 
 namespace irods::handler
@@ -463,43 +489,28 @@ namespace irods::handler
                 THROW(SYS_INVALID_INPUT_PARAM, fmt::format("Logical Quotas Policy: [{}] is not a monitored collection.", path));
             }
 
-            auto username = get_collection_username(*rei.rsComm, path);
-
-            if (!username) {
-                throw std::runtime_error{fmt::format("Logical Quotas Policy: No owner found for path [{}]", path)};
-            }
-
             auto quota_status = nlohmann::json::object(); // Holds the current quota values.
 
-            const auto func = [&] {
-                // Fetch the current quota values for the collection.
-                for (const auto& quota_name : {attrs.maximum_number_of_data_objects(),
-                                               attrs.maximum_size_in_bytes(),
-                                               attrs.total_number_of_data_objects(),
-                                               attrs.total_size_in_bytes()})
-                {
-                    const auto gql = fmt::format("select META_COLL_ATTR_VALUE where COLL_NAME = '{}' and META_COLL_ATTR_NAME = '{}'",
-                                                 path, quota_name);
+			// Fetch the current quota values for the collection.
+			irods::experimental::client_connection client_conn;
+			for (const auto& quota_name : {attrs.maximum_number_of_data_objects(),
+			                               attrs.maximum_size_in_bytes(),
+			                               attrs.total_number_of_data_objects(),
+			                               attrs.total_size_in_bytes()})
+			{
+				auto [result, err] =
+					get_quota_value_for_collection(static_cast<RcComm&>(client_conn), path, quota_name);
+				if (!err.ok()) {
+					return err;
+				}
+				quota_status[quota_name] = std::move(result);
+			}
 
-                    for (const auto& row : irods::query{&conn, gql}) {
-                        quota_status[quota_name] = row[0];
-                    }
-                }
-            };
-
-            if (is_group(conn, *username)) {
-                irods::experimental::scoped_permission sp{conn, path, fs::perms::write};
-                func();
-            }
-            else {
-                switch_user(rei, *username, func);
-            }
-
-            // "_ms_param_array" points to a valid object depending on how the rule is invoked. If the implementation
-            // is invoked via exec_rule, then this parameter will be null. If invoked via exec_rule_text or exec_rule_expression,
-            // this parameter will point to a valid object. The exec_rule_text/expression functions reply on this parameter to
-            // return information back to the client.
-            if (_ms_param_array) {
+			// "_ms_param_array" points to a valid object depending on how the rule is invoked. If the implementation
+			// is invoked via exec_rule, then this parameter will be null. If invoked via exec_rule_text or
+			// exec_rule_expression, this parameter will point to a valid object. The exec_rule_text/expression
+			// functions reply on this parameter to return information back to the client.
+			if (_ms_param_array) {
                 if (auto* msp = getMsParamByLabel(_ms_param_array, "ruleExecOut"); msp) {
                     // Free any resources previously associated with the parameter.
                     if (msp->type) { std::free(msp->type); }
@@ -542,9 +553,6 @@ namespace irods::handler
                 return ERROR(RE_UNABLE_TO_WRITE_VAR, "Logical Quotas Policy: Missing output variable for status.");
             }
         }
-        catch (const switch_user_error& e) {
-            return log_logical_quotas_exception(e, _effect_handler);
-        }
         catch (const irods::exception& e) {
             return log_irods_exception(e, _effect_handler);
         }
@@ -586,40 +594,25 @@ namespace irods::handler
             const auto& path = *boost::any_cast<std::string*>(*args_iter);
 
             auto& rei = get_rei(_effect_handler);
-            auto username = get_collection_username(*rei.rsComm, path);
 
-            if (!username) {
-                throw std::runtime_error{fmt::format("Logical Quotas Policy: No owner found for path [{}]", path)};
-            }
+			std::vector args{path + '%'};
+			auto query = irods::experimental::query_builder{}
+			                 .type(irods::experimental::query_type::specific)
+			                 .bind_arguments(args)
+			                 .build<RsComm>(*rei.rsComm, "logical_quotas_count_data_objects_recursive");
 
-            const auto func = [&] {
-                std::vector args{path + '%'};
-                auto query = irods::experimental::query_builder{}
-                    .type(irods::experimental::query_type::specific)
-                    .bind_arguments(args)
-                    .build<RsComm>(*rei.rsComm, "logical_quotas_count_data_objects_recursive");
+			std::string objects;
+			for (auto&& row : query) {
+				objects = row[0];
+			}
 
-                std::string objects;
-                for (auto&& row : query) {
-                    objects = row[0];
-                }
+			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
-                const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-                fs::server::set_metadata(*rei.rsComm, path, {attrs.total_number_of_data_objects(), objects.empty() ? "0" : objects});
-            };
-
-            if (is_group(*rei.rsComm, *username)) {
-                irods::experimental::scoped_permission sp{*rei.rsComm, path, fs::perms::write};
-                func();
-            }
-            else {
-                switch_user(rei, *username, func);
-            }
-        }
-        catch (const switch_user_error& e) {
-            return log_logical_quotas_exception(e, _effect_handler);
-        }
-        catch (const irods::exception& e) {
+			irods::experimental::client_connection conn;
+			fs::client::set_metadata(
+				fs::admin, conn, path, {attrs.total_number_of_data_objects(), objects.empty() ? "0" : objects});
+		}
+		catch (const irods::exception& e) {
             return log_irods_exception(e, _effect_handler);
         }
         catch (const std::exception& e) {
@@ -640,40 +633,24 @@ namespace irods::handler
             const auto& path = *boost::any_cast<std::string*>(*args_iter);
 
             auto& rei = get_rei(_effect_handler);
-            auto username = get_collection_username(*rei.rsComm, path);
 
-            if (!username) {
-                throw std::runtime_error{fmt::format("Logical Quotas Policy: No owner found for path [{}]", path)};
-            }
+			std::vector args{path + '%'};
+			auto query = irods::experimental::query_builder{}
+			                 .type(irods::experimental::query_type::specific)
+			                 .bind_arguments(args)
+			                 .build<RsComm>(*rei.rsComm, "logical_quotas_sum_data_object_sizes_recursive");
 
-            const auto func = [&] {
-                std::vector args{path + '%'};
-                auto query = irods::experimental::query_builder{}
-                    .type(irods::experimental::query_type::specific)
-                    .bind_arguments(args)
-                    .build<RsComm>(*rei.rsComm, "logical_quotas_sum_data_object_sizes_recursive");
+			std::string bytes;
+			for (auto&& row : query) {
+				bytes = row[0];
+			}
 
-                std::string bytes;
-                for (auto&& row : query) {
-                    bytes = row[0];
-                }
+			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
-                const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-                fs::server::set_metadata(*rei.rsComm, path, {attrs.total_size_in_bytes(), bytes.empty() ? "0" : bytes});
-            };
-
-            if (is_group(*rei.rsComm, *username)) {
-                irods::experimental::scoped_permission sp{*rei.rsComm, path, fs::perms::write};
-                func();
-            }
-            else {
-                switch_user(rei, *username, func);
-            }
-        }
-        catch (const switch_user_error& e) {
-            return log_logical_quotas_exception(e, _effect_handler);
-        }
-        catch (const irods::exception& e) {
+			irods::experimental::client_connection conn;
+			fs::client::set_metadata(fs::admin, conn, path, {attrs.total_size_in_bytes(), bytes.empty() ? "0" : bytes});
+		}
+		catch (const irods::exception& e) {
             return log_irods_exception(e, _effect_handler);
         }
         catch (const std::exception& e) {
@@ -711,33 +688,17 @@ namespace irods::handler
             auto args_iter = std::begin(_rule_arguments);
             const auto& path = *boost::any_cast<std::string*>(*args_iter);
 
-            auto& rei = get_rei(_effect_handler);
-            auto username = get_collection_username(*rei.rsComm, path);
+			const auto& max_objects = *boost::any_cast<std::string*>(*++args_iter);
+			const auto msg = fmt::format(
+				"Logical Quotas Policy: Invalid value for maximum number of data objects [{}]", max_objects);
+			throw_if_string_cannot_be_cast_to_an_integer(max_objects, msg);
+			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
-            if (!username) {
-                throw std::runtime_error{fmt::format("Logical Quotas Policy: No owner found for path [{}]", path)};
-            }
-
-            const auto func = [&] {
-                const auto& max_objects = *boost::any_cast<std::string*>(*++args_iter);
-                const auto msg = fmt::format("Logical Quotas Policy: Invalid value for maximum number of data objects [{}]", max_objects);
-                throw_if_string_cannot_be_cast_to_an_integer(max_objects, msg);
-                const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-                fs::server::set_metadata(*rei.rsComm, path, {attrs.maximum_number_of_data_objects(), max_objects});
-            };
-
-            if (is_group(*rei.rsComm, *username)) {
-                irods::experimental::scoped_permission sp{*rei.rsComm, path, fs::perms::write};
-                func();
-            }
-            else {
-                switch_user(rei, *username, func);
-            }
-        }
-        catch (const switch_user_error& e) {
-            return log_logical_quotas_exception(e, _effect_handler);
-        }
-        catch (const irods::exception& e) {
+			irods::experimental::client_connection client_conn;
+			fs::client::set_metadata(
+				fs::admin, client_conn, path, {attrs.maximum_number_of_data_objects(), max_objects});
+		}
+		catch (const irods::exception& e) {
             return log_irods_exception(e, _effect_handler);
         }
         catch (const std::exception& e) {
@@ -757,33 +718,16 @@ namespace irods::handler
             auto args_iter = std::begin(_rule_arguments);
             const auto& path = *boost::any_cast<std::string*>(*args_iter);
 
-            auto& rei = get_rei(_effect_handler);
-            auto username = get_collection_username(*rei.rsComm, path);
+			const auto& max_bytes = *boost::any_cast<std::string*>(*++args_iter);
+			const auto msg =
+				fmt::format("Logical Quotas Policy: Invalid value for maximum size in bytes [{}]", max_bytes);
+			throw_if_string_cannot_be_cast_to_an_integer(max_bytes, msg);
+			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
-            if (!username) {
-                throw std::runtime_error{fmt::format("Logical Quotas Policy: No owner found for path [{}]", path)};
-            }
-
-            const auto func = [&] {
-                const auto& max_bytes = *boost::any_cast<std::string*>(*++args_iter);
-                const auto msg = fmt::format("Logical Quotas Policy: Invalid value for maximum size in bytes [{}]", max_bytes);
-                throw_if_string_cannot_be_cast_to_an_integer(max_bytes, msg);
-                const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-                fs::server::set_metadata(*rei.rsComm, path, {attrs.maximum_size_in_bytes(), max_bytes});
-            };
-
-            if (is_group(*rei.rsComm, *username)) {
-                irods::experimental::scoped_permission sp{*rei.rsComm, path, fs::perms::write};
-                func();
-            }
-            else {
-                switch_user(rei, *username, func);
-            }
-        }
-        catch (const switch_user_error& e) {
-            return log_logical_quotas_exception(e, _effect_handler);
-        }
-        catch (const irods::exception& e) {
+			irods::experimental::client_connection client_conn;
+			fs::client::set_metadata(fs::admin, client_conn, path, {attrs.maximum_size_in_bytes(), max_bytes});
+		}
+		catch (const irods::exception& e) {
             return log_irods_exception(e, _effect_handler);
         }
         catch (const std::exception& e) {
