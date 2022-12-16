@@ -46,7 +46,6 @@ target_compile_options(${PLUGIN} PRIVATE -Wno-write-strings)
 
 target_compile_definitions(${PLUGIN} PRIVATE ${IRODS_COMPILE_DEFINITIONS}
                                              IRODS_QUERY_ENABLE_SERVER_SIDE_API
-                                             IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
                                              IRODS_IO_TRANSPORT_ENABLE_SERVER_SIDE_API
                                              IRODS_REPLICA_ENABLE_SERVER_SIDE_API)
 
