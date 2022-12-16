@@ -804,6 +804,33 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
             self.user.assert_icommand(['itouch', 'foo'])
             self.assert_quotas(col, expected_number_of_objects=1, expected_size_in_bytes=0)
 
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_quotas_do_not_block_non_administrators_from_creating_or_writing_data_objects__issue_84(self):
+        config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+            sandbox = self.user.session_collection
+            self.logical_quotas_start_monitoring_collection(sandbox)
+
+            # Set up the quotas (which this test will not exceed).
+            self.logical_quotas_set_maximum_number_of_data_objects(sandbox, '2')
+            self.logical_quotas_set_maximum_size_in_bytes(sandbox, '15')
+
+            # Create, and then write into, a data object.
+            # Then check that the tracking AVUs are updated on each operation.
+            contents = 'content'
+            data_object_path = 'f1.txt'
+            self.user.assert_icommand(['itouch', data_object_path])
+            self.assert_quotas(sandbox, expected_number_of_objects = 1,
+                                        expected_size_in_bytes = 0)
+
+            self.user.assert_icommand(['istream', 'write', data_object_path], input = contents)
+            file_size = len(contents)
+            self.assert_quotas(sandbox, expected_number_of_objects = 1,
+                                        expected_size_in_bytes = file_size)
+
     #
     # Utility Functions
     #

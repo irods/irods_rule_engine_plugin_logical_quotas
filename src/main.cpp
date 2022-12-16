@@ -26,8 +26,8 @@ namespace
 {
     // clang-format off
     namespace handler = irods::handler;
+    namespace log     = irods::experimental::log;
 
-    using log         = irods::experimental::log;
     using json        = nlohmann::json;
 
     irods::instance_configuration_map instance_configs;
