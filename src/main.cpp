@@ -222,20 +222,49 @@ namespace
                              MsParamArray* _ms_param_array,
                              irods::callback _effect_handler) -> irods::error
     {
-        log::rule_engine::debug({{"_rule_text", std::string{_rule_text}}});
+        log::rule_engine::debug("_rule_text => [{}]", _rule_text);
 
         // irule <text>
-        if (_rule_text.find("@external rule {") != std::string::npos) {
+        if (_rule_text.find("@external rule {") != std::string_view::npos) {
             const auto start = _rule_text.find_first_of('{') + 1;
-            _rule_text = _rule_text.substr(start, _rule_text.rfind(" }") - start);
+            const auto end = _rule_text.rfind(" }");
+
+            if (end == std::string_view::npos) {
+                auto msg = fmt::format("Received malformed rule text. "
+                                       "Expected closing curly brace following rule text [{}].",
+                                       _rule_text);
+                log::rule_engine::error(msg);
+                return ERROR(SYS_INVALID_INPUT_PARAM, std::move(msg));
+            }
+
+            _rule_text = _rule_text.substr(start, end - start);
         }
         // irule -F <script>
-        else if (_rule_text.find("@external") != std::string::npos) {
-            const auto start = _rule_text.find_first_of('{');
-            _rule_text = _rule_text.substr(start, _rule_text.rfind(" }") - start);
+        else if (const auto external_pos = _rule_text.find("@external\n"); external_pos != std::string_view::npos) {
+            // If there are opening and closing curly braces following the "@external\n" prefix, then we
+            // can assume that the rule text most likely represents a JSON string.
+            if (const auto start = _rule_text.find_first_of('{'); start != std::string_view::npos) {
+                const auto end = _rule_text.rfind(" }");
+
+                if (end == std::string_view::npos) {
+                    auto msg = fmt::format("Received malformed rule text. "
+                                           "Expected closing curly brace following rule text [{}].",
+                                           _rule_text);
+                    log::rule_engine::error(msg);
+                    return ERROR(SYS_INVALID_INPUT_PARAM, std::move(msg));
+                }
+
+                _rule_text = _rule_text.substr(start, end - start);
+            }
+            // Otherwise, the rule text must represent something else. In this case, simply strip the
+            // "@external\n" prefix from the rule text and let the JSON parser throw an exception if the
+            // rule text cannot be parsed. This allows the REP to fail without causing the agent to crash.
+            else {
+                _rule_text = _rule_text.substr(external_pos + 10);
+            }
         }
 
-        log::rule_engine::debug({{"_rule_text", std::string{_rule_text}}});
+        log::rule_engine::debug("_rule_text => [{}]", _rule_text);
 
         try {
             const auto json_args = json::parse(_rule_text);
@@ -250,12 +279,14 @@ namespace
                 std::list<boost::any> args{&collection};
                 std::string value;
 
+                // clang-format off
                 if (op == "logical_quotas_set_maximum_number_of_data_objects" ||
                     op == "logical_quotas_set_maximum_size_in_bytes")
                 {
                     value = json_args.at("value").get<std::string>();
                     args.push_back(&value);
                 }
+                // clang-format on
 
                 return (iter->second)(_instance_name, instance_configs, args, _ms_param_array, _effect_handler);
             }
@@ -362,4 +393,3 @@ auto plugin_factory(const std::string& _instance_name, const std::string& _conte
 
     return re;
 }
-
