@@ -5,6 +5,7 @@ import sys
 import shutil
 import json
 import subprocess
+import textwrap
 
 if sys.version_info < (2, 7):
     import unittest2 as unittest
@@ -766,6 +767,43 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
             contents = 'it worked!'
             self.user.assert_icommand(['istream', 'write', 'foo'], input=contents)
             self.assert_quotas(col, expected_number_of_objects=1, expected_size_in_bytes=len(contents))
+
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_plugin_does_not_crash_on_unsupported_rule_text_executed_via_irule_F__issue_6831(self):
+        config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+            # Create a rule file that contains rule code that isn't supported by the plugin.
+            # This originally caused the plugin to throw an exception which lead to the agent
+            # crashing.
+            rule_file = os.path.join(self.user.local_session_dir, 'issue_6831.r')
+            with open(rule_file, 'w') as f:
+                f.write(textwrap.dedent('''
+                def syntax_not_supported_by_logical_quotas(rule_args, callback, rei):
+                    callback.writeLine('serverLog', 'some data')
+
+                INPUT null
+                OUTPUT null
+                '''))
+
+            # Show that the plugin gracefully handles unsupported rule code.
+            # The use of "-F" is important because it tests the code path that originally
+            # caused an exception to be thrown.
+            self.user.assert_icommand(['irule', '-F', rule_file])
+
+            # Show that the plugin is still working.
+            col = self.user.session_collection
+            self.logical_quotas_start_monitoring_collection(col)
+
+            # Show that the REP hasn't detected any data objects in the monitored collection.
+            self.assert_quotas(col, expected_number_of_objects=0, expected_size_in_bytes=0)
+
+            # Show that after creating a new data object via itouch, the REP correctly increments
+            # the data object count by one.
+            self.user.assert_icommand(['itouch', 'foo'])
+            self.assert_quotas(col, expected_number_of_objects=1, expected_size_in_bytes=0)
 
     #
     # Utility Functions
