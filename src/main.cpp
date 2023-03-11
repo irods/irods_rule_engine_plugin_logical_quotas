@@ -206,17 +206,46 @@ namespace
                              MsParamArray* _ms_param_array,
                              irods::callback _effect_handler) -> irods::error
     {
-        rodsLog(LOG_DEBUG, "[logical_quotas] _rule_text => %s", _rule_text.data());
+        rodsLog(LOG_DEBUG, "[logical_quotas] _rule_text => %s", std::string{_rule_text}.c_str());
 
         // irule <text>
-        if (_rule_text.find("@external rule {") != std::string::npos) {
+        if (_rule_text.find("@external rule {") != std::string_view::npos) {
             const auto start = _rule_text.find_first_of('{') + 1;
-            _rule_text = _rule_text.substr(start, _rule_text.rfind(" }") - start);
+            const auto end = _rule_text.rfind(" }");
+
+            if (end == std::string_view::npos) {
+                auto msg = fmt::format("[logical_quotas] Received malformed rule text. "
+                                       "Expected closing curly brace following rule text [{}].",
+                                       _rule_text);
+                rodsLog(LOG_ERROR, msg.c_str());
+                return ERROR(SYS_INVALID_INPUT_PARAM, std::move(msg));
+            }
+
+            _rule_text = _rule_text.substr(start, end - start);
         }
         // irule -F <script>
-        else if (_rule_text.find("@external") != std::string::npos) {
-            const auto start = _rule_text.find_first_of('{');
-            _rule_text = _rule_text.substr(start, _rule_text.rfind(" }") - start);
+        else if (const auto external_pos = _rule_text.find("@external\n"); external_pos != std::string_view::npos) {
+            // If there are opening and closing curly braces following the "@external\n" prefix, then we
+            // can assume that the rule text most likely represents a JSON string.
+            if (const auto start = _rule_text.find_first_of('{'); start != std::string_view::npos) {
+                const auto end = _rule_text.rfind(" }");
+
+                if (end == std::string_view::npos) {
+                    auto msg = fmt::format("[logical_quotas] Received malformed rule text. "
+                                           "Expected closing curly brace following rule text [{}].",
+                                           _rule_text);
+                    rodsLog(LOG_ERROR, msg.c_str());
+                    return ERROR(SYS_INVALID_INPUT_PARAM, std::move(msg));
+                }
+
+                _rule_text = _rule_text.substr(start, end - start);
+            }
+            // Otherwise, the rule text must represent something else. In this case, simply strip the
+            // "@external\n" prefix from the rule text and let the JSON parser throw an exception if the
+            // rule text cannot be parsed. This allows the REP to fail without causing the agent to crash.
+            else {
+                _rule_text = _rule_text.substr(external_pos + 10);
+            }
         }
 
         rodsLog(LOG_DEBUG, "[logical_quotas] _rule_text => %s", std::string{_rule_text}.data());
