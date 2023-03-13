@@ -741,7 +741,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
             # Show that the REP hasn't detected any data objects in the monitored collection.
             self.assert_quotas(col, expected_number_of_objects=0, expected_size_in_bytes=0)
 
-            # Show that after creating a new data object via itouch, the REP correctly in increments
+            # Show that after creating a new data object via itouch, the REP correctly increments
             # the data object count by one.
             self.user.assert_icommand(['itouch', 'foo'])
             self.assert_quotas(col, expected_number_of_objects=1, expected_size_in_bytes=0)
