@@ -80,10 +80,6 @@ install(FILES ${CMAKE_SOURCE_DIR}/packaging/test_rule_engine_plugin_logical_quot
         DESTINATION ${IRODS_HOME_DIRECTORY}/scripts/irods/test
         PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 
-install(FILES ${CMAKE_SOURCE_DIR}/packaging/run_logical_quotas_test.py
-        DESTINATION ${IRODS_HOME_DIRECTORY}/scripts
-        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
-
 set(PLUGIN_PACKAGE_NAME irods-rule-engine-plugin-logical-quotas)
 
 include(IrodsCPackCommon)
