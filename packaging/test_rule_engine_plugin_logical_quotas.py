@@ -642,16 +642,16 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
                 # Create a resource hierarchy containing two unixfilesystem resources
                 # under a replication resource.
                 repl_resc = 'repl_resc_issue_48'
-                lib.create_replication_resource(repl_resc, self.admin1)
+                lib.create_replication_resource(self.admin1, repl_resc)
 
                 ufs0_resc = 'ufs0_resc_issue_48'
-                lib.create_ufs_resource(ufs0_resc, self.admin1)
+                lib.create_ufs_resource(self.admin1, ufs0_resc)
 
                 ufs1_resc = 'ufs1_resc_issue_48'
-                lib.create_ufs_resource(ufs1_resc, self.admin1)
+                lib.create_ufs_resource(self.admin1, ufs1_resc)
 
-                lib.add_child_resource(repl_resc, ufs0_resc, self.admin1)
-                lib.add_child_resource(repl_resc, ufs1_resc, self.admin1)
+                lib.add_child_resource(self.admin1, repl_resc, ufs0_resc)
+                lib.add_child_resource(self.admin1, repl_resc, ufs1_resc)
 
                 # Create three data objects under the replication resource. Two in the
                 # session collection and one in a sub-collection.
@@ -682,8 +682,8 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
                 for data_object in [data_object_1, data_object_2, data_object_3]:
                     self.admin1.run_icommand(['irm', '-f', data_object])
 
-                lib.remove_child_resource(repl_resc, ufs0_resc, self.admin1)
-                lib.remove_child_resource(repl_resc, ufs1_resc, self.admin1)
+                lib.remove_child_resource(self.admin1, repl_resc, ufs0_resc)
+                lib.remove_child_resource(self.admin1, repl_resc, ufs1_resc)
 
                 for resc_name in [repl_resc, ufs0_resc, ufs1_resc]:
                     self.admin1.run_icommand(['iadmin', 'rmresc', resc_name])
