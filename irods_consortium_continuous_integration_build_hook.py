@@ -50,6 +50,7 @@ def install_os_specific_dependencies():
         'Centos': install_os_specific_dependencies_yum,
         'Centos linux': install_os_specific_dependencies_yum,
         'Almalinux': install_os_specific_dependencies_yum,
+        'Rocky linux': install_os_specific_dependencies_yum,
         'Opensuse ': install_os_specific_dependencies_yum,
     }
     try:
