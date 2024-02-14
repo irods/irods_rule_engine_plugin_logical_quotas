@@ -29,7 +29,6 @@ endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
 include(GNUInstallDirs)
-include(UseLibCXX)
 
 find_package(nlohmann_json "3.6.1" REQUIRED)
 find_package(fmt "8.1.1"
