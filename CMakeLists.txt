@@ -57,8 +57,7 @@ target_compile_definitions(${PLUGIN} PRIVATE ${IRODS_COMPILE_DEFINITIONS}
                                              SPDLOG_NO_TLS)
 
 target_include_directories(${PLUGIN} PRIVATE ${IRODS_INCLUDE_DIRS}
-                                             ${IRODS_EXTERNALS_FULLPATH_BOOST}/include
-                                             ${IRODS_EXTERNALS_FULLPATH_SPDLOG}/include)
+                                             ${IRODS_EXTERNALS_FULLPATH_BOOST}/include)
 
 target_link_libraries(${PLUGIN} PRIVATE irods_server
                                         irods_common
