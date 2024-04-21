@@ -481,8 +481,11 @@ namespace irods::handler
 			const auto& path = *boost::any_cast<std::string*>(*args_iter);
 
 			if (!is_monitored_collection(conn, attrs, path)) {
-				THROW(SYS_INVALID_INPUT_PARAM,
-				      fmt::format("Logical Quotas Policy: [{}] is not a monitored collection.", path));
+				auto msg = fmt::format("Logical Quotas Policy: [{}] is not a monitored collection.", path);
+				log::rule_engine::error(msg);
+				constexpr auto ec = SYS_INVALID_INPUT_PARAM;
+				addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, ec, msg.c_str());
+				return ERROR(ec, std::move(msg));
 			}
 
 			auto quota_status = nlohmann::json::object(); // Holds the current quota values.
