@@ -13,294 +13,295 @@
 
 namespace irods::handler
 {
-    // clang-format off
-    using size_type          = std::int64_t;
-    using file_position_type = std::int64_t;
-    // clang-format on
+	// clang-format off
+	using size_type          = std::int64_t;
+	using file_position_type = std::int64_t;
+	// clang-format on
 
-    auto logical_quotas_get_collection_status(const std::string& _instance_name,
-                                              const instance_configuration_map& _instance_configs,
-                                              std::list<boost::any>& _rule_arguments,
-                                              MsParamArray* _ms_param_array,
-                                              irods::callback& _effect_handler) -> irods::error;
-    
-    auto logical_quotas_start_monitoring_collection(const std::string& _instance_name,
-                                                    const instance_configuration_map& _instance_configs,
-                                                    std::list<boost::any>& _rule_arguments,
-                                                    MsParamArray* _ms_param_array,
-                                                    irods::callback& _effect_handler) -> irods::error;
-    
-    auto logical_quotas_stop_monitoring_collection(const std::string& _instance_name,
-                                                   const instance_configuration_map& _instance_configs,
-                                                   std::list<boost::any>& _rule_arguments,
-                                                   MsParamArray* _ms_param_array,
-                                                   irods::callback& _effect_handler) -> irods::error;
+	auto logical_quotas_get_collection_status(const std::string& _instance_name,
+	                                          const instance_configuration_map& _instance_configs,
+	                                          std::list<boost::any>& _rule_arguments,
+	                                          MsParamArray* _ms_param_array,
+	                                          irods::callback& _effect_handler) -> irods::error;
 
-    auto logical_quotas_count_total_number_of_data_objects(const std::string& _instance_name,
-                                                           const instance_configuration_map& _instance_configs,
-                                                           std::list<boost::any>& _rule_arguments,
-                                                           MsParamArray* _ms_param_array,
-                                                           irods::callback& _effect_handler) -> irods::error;
+	auto logical_quotas_start_monitoring_collection(const std::string& _instance_name,
+	                                                const instance_configuration_map& _instance_configs,
+	                                                std::list<boost::any>& _rule_arguments,
+	                                                MsParamArray* _ms_param_array,
+	                                                irods::callback& _effect_handler) -> irods::error;
 
-    auto logical_quotas_count_total_size_in_bytes(const std::string& _instance_name,
-                                                  const instance_configuration_map& _instance_configs,
-                                                  std::list<boost::any>& _rule_arguments,
-                                                  MsParamArray* _ms_param_array,
-                                                  irods::callback& _effect_handler) -> irods::error;
+	auto logical_quotas_stop_monitoring_collection(const std::string& _instance_name,
+	                                               const instance_configuration_map& _instance_configs,
+	                                               std::list<boost::any>& _rule_arguments,
+	                                               MsParamArray* _ms_param_array,
+	                                               irods::callback& _effect_handler) -> irods::error;
 
-    auto logical_quotas_recalculate_totals(const std::string& _instance_name,
-                                           const instance_configuration_map& _instance_configs,
-                                           std::list<boost::any>& _rule_arguments,
-                                           MsParamArray* _ms_param_array,
-                                           irods::callback& _effect_handler) -> irods::error;
+	auto logical_quotas_count_total_number_of_data_objects(const std::string& _instance_name,
+	                                                       const instance_configuration_map& _instance_configs,
+	                                                       std::list<boost::any>& _rule_arguments,
+	                                                       MsParamArray* _ms_param_array,
+	                                                       irods::callback& _effect_handler) -> irods::error;
 
-    auto logical_quotas_set_maximum_number_of_data_objects(const std::string& _instance_name,
-                                                           const instance_configuration_map& _instance_configs,
-                                                           std::list<boost::any>& _rule_arguments,
-                                                           MsParamArray* _ms_param_array,
-                                                           irods::callback& _effect_handler) -> irods::error;
+	auto logical_quotas_count_total_size_in_bytes(const std::string& _instance_name,
+	                                              const instance_configuration_map& _instance_configs,
+	                                              std::list<boost::any>& _rule_arguments,
+	                                              MsParamArray* _ms_param_array,
+	                                              irods::callback& _effect_handler) -> irods::error;
 
-    auto logical_quotas_set_maximum_size_in_bytes(const std::string& _instance_name,
-                                                  const instance_configuration_map& _instance_configs,
-                                                  std::list<boost::any>& _rule_arguments,
-                                                  MsParamArray* _ms_param_array,
-                                                  irods::callback& _effect_handler) -> irods::error;
+	auto logical_quotas_recalculate_totals(const std::string& _instance_name,
+	                                       const instance_configuration_map& _instance_configs,
+	                                       std::list<boost::any>& _rule_arguments,
+	                                       MsParamArray* _ms_param_array,
+	                                       irods::callback& _effect_handler) -> irods::error;
 
-    auto logical_quotas_unset_maximum_number_of_data_objects(const std::string& _instance_name,
-                                                             const instance_configuration_map& _instance_configs,
-                                                             std::list<boost::any>& _rule_arguments,
-                                                             MsParamArray* _ms_param_array,
-                                                             irods::callback& _effect_handler) -> irods::error;
+	auto logical_quotas_set_maximum_number_of_data_objects(const std::string& _instance_name,
+	                                                       const instance_configuration_map& _instance_configs,
+	                                                       std::list<boost::any>& _rule_arguments,
+	                                                       MsParamArray* _ms_param_array,
+	                                                       irods::callback& _effect_handler) -> irods::error;
 
-    auto logical_quotas_unset_maximum_size_in_bytes(const std::string& _instance_name,
-                                                    const instance_configuration_map& _instance_configs,
-                                                    std::list<boost::any>& _rule_arguments,
-                                                    MsParamArray* _ms_param_array,
-                                                    irods::callback& _effect_handler) -> irods::error;
+	auto logical_quotas_set_maximum_size_in_bytes(const std::string& _instance_name,
+	                                              const instance_configuration_map& _instance_configs,
+	                                              std::list<boost::any>& _rule_arguments,
+	                                              MsParamArray* _ms_param_array,
+	                                              irods::callback& _effect_handler) -> irods::error;
 
-    auto logical_quotas_unset_total_number_of_data_objects(const std::string& _instance_name,
-                                                           const instance_configuration_map& _instance_configs,
-                                                           std::list<boost::any>& _rule_arguments,
-                                                           MsParamArray* _ms_param_array,
-                                                           irods::callback& _effect_handler) -> irods::error;
+	auto logical_quotas_unset_maximum_number_of_data_objects(const std::string& _instance_name,
+	                                                         const instance_configuration_map& _instance_configs,
+	                                                         std::list<boost::any>& _rule_arguments,
+	                                                         MsParamArray* _ms_param_array,
+	                                                         irods::callback& _effect_handler) -> irods::error;
 
-    auto logical_quotas_unset_total_size_in_bytes(const std::string& _instance_name,
-                                                  const instance_configuration_map& _instance_configs,
-                                                  std::list<boost::any>& _rule_arguments,
-                                                  MsParamArray* _ms_param_array,
-                                                  irods::callback& _effect_handler) -> irods::error;
+	auto logical_quotas_unset_maximum_size_in_bytes(const std::string& _instance_name,
+	                                                const instance_configuration_map& _instance_configs,
+	                                                std::list<boost::any>& _rule_arguments,
+	                                                MsParamArray* _ms_param_array,
+	                                                irods::callback& _effect_handler) -> irods::error;
 
-    class pep_api_data_obj_copy final
-    {
-    public:
-        pep_api_data_obj_copy() = delete;
+	auto logical_quotas_unset_total_number_of_data_objects(const std::string& _instance_name,
+	                                                       const instance_configuration_map& _instance_configs,
+	                                                       std::list<boost::any>& _rule_arguments,
+	                                                       MsParamArray* _ms_param_array,
+	                                                       irods::callback& _effect_handler) -> irods::error;
 
-        static auto reset() noexcept -> void;
+	auto logical_quotas_unset_total_size_in_bytes(const std::string& _instance_name,
+	                                              const instance_configuration_map& _instance_configs,
+	                                              std::list<boost::any>& _rule_arguments,
+	                                              MsParamArray* _ms_param_array,
+	                                              irods::callback& _effect_handler) -> irods::error;
 
-        static auto pre(const std::string& _instance_name,
-                        const instance_configuration_map& _instance_configs,
-                        std::list<boost::any>& _rule_arguments,
-                        MsParamArray* _ms_param_array,
-                        irods::callback& _effect_handler) -> irods::error;
+	class pep_api_data_obj_copy final
+	{
+	  public:
+		pep_api_data_obj_copy() = delete;
 
-        static auto post(const std::string& _instance_name,
-                         const instance_configuration_map& _instance_configs,
-                         std::list<boost::any>& _rule_arguments,
-                         MsParamArray* _ms_param_array,
-                         irods::callback& _effect_handler) -> irods::error;
+		static auto reset() noexcept -> void;
 
-    private:
-        inline static size_type data_objects_ = 0;
-        inline static size_type size_in_bytes_ = 0;
-    }; // class pep_api_data_obj_copy
+		static auto pre(const std::string& _instance_name,
+		                const instance_configuration_map& _instance_configs,
+		                std::list<boost::any>& _rule_arguments,
+		                MsParamArray* _ms_param_array,
+		                irods::callback& _effect_handler) -> irods::error;
 
-    auto pep_api_data_obj_create_pre(const std::string& _instance_name,
-                                     const instance_configuration_map& _instance_configs,
-                                     std::list<boost::any>& _rule_arguments,
-                                     MsParamArray* _ms_param_array,
-                                     irods::callback& _effect_handler) -> irods::error;
+		static auto post(const std::string& _instance_name,
+		                 const instance_configuration_map& _instance_configs,
+		                 std::list<boost::any>& _rule_arguments,
+		                 MsParamArray* _ms_param_array,
+		                 irods::callback& _effect_handler) -> irods::error;
 
-    auto pep_api_data_obj_create_post(const std::string& _instance_name,
-                                      const instance_configuration_map& _instance_configs,
-                                      std::list<boost::any>& _rule_arguments,
-                                      MsParamArray* _ms_param_array,
-                                      irods::callback& _effect_handler) -> irods::error;
+	  private:
+		inline static size_type data_objects_ = 0;
+		inline static size_type size_in_bytes_ = 0;
+	}; // class pep_api_data_obj_copy
 
-    class pep_api_data_obj_put final
-    {
-    public:
-        pep_api_data_obj_put() = delete;
+	auto pep_api_data_obj_create_pre(const std::string& _instance_name,
+	                                 const instance_configuration_map& _instance_configs,
+	                                 std::list<boost::any>& _rule_arguments,
+	                                 MsParamArray* _ms_param_array,
+	                                 irods::callback& _effect_handler) -> irods::error;
 
-        static auto reset() noexcept -> void;
+	auto pep_api_data_obj_create_post(const std::string& _instance_name,
+	                                  const instance_configuration_map& _instance_configs,
+	                                  std::list<boost::any>& _rule_arguments,
+	                                  MsParamArray* _ms_param_array,
+	                                  irods::callback& _effect_handler) -> irods::error;
 
-        static auto pre(const std::string& _instance_name,
-                        const instance_configuration_map& _instance_configs,
-                        std::list<boost::any>& _rule_arguments,
-                        MsParamArray* _ms_param_array,
-                        irods::callback& _effect_handler) -> irods::error;
+	class pep_api_data_obj_put final
+	{
+	  public:
+		pep_api_data_obj_put() = delete;
 
-        static auto post(const std::string& _instance_name,
-                         const instance_configuration_map& _instance_configs,
-                         std::list<boost::any>& _rule_arguments,
-                         MsParamArray* _ms_param_array,
-                         irods::callback& _effect_handler) -> irods::error;
+		static auto reset() noexcept -> void;
 
-    private:
-        inline static size_type size_diff_ = 0;
-        inline static bool forced_overwrite_ = false;
-    }; // class pep_api_data_obj_put
+		static auto pre(const std::string& _instance_name,
+		                const instance_configuration_map& _instance_configs,
+		                std::list<boost::any>& _rule_arguments,
+		                MsParamArray* _ms_param_array,
+		                irods::callback& _effect_handler) -> irods::error;
 
-    class pep_api_data_obj_rename final
-    {
-    public:
-        pep_api_data_obj_rename() = delete;
+		static auto post(const std::string& _instance_name,
+		                 const instance_configuration_map& _instance_configs,
+		                 std::list<boost::any>& _rule_arguments,
+		                 MsParamArray* _ms_param_array,
+		                 irods::callback& _effect_handler) -> irods::error;
 
-        static auto reset() noexcept -> void;
+	  private:
+		inline static size_type size_diff_ = 0;
+		inline static bool forced_overwrite_ = false;
+	}; // class pep_api_data_obj_put
 
-        static auto pre(const std::string& _instance_name,
-                        const instance_configuration_map& _instance_configs,
-                        std::list<boost::any>& _rule_arguments,
-                        MsParamArray* _ms_param_array,
-                        irods::callback& _effect_handler) -> irods::error;
+	class pep_api_data_obj_rename final
+	{
+	  public:
+		pep_api_data_obj_rename() = delete;
 
-        static auto post(const std::string& _instance_name,
-                         const instance_configuration_map& _instance_configs,
-                         std::list<boost::any>& _rule_arguments,
-                         MsParamArray* _ms_param_array,
-                         irods::callback& _effect_handler) -> irods::error;
+		static auto reset() noexcept -> void;
 
-    private:
-        inline static size_type data_objects_ = 0;
-        inline static size_type size_in_bytes_ = 0;
-    }; // class pep_api_data_obj_rename
+		static auto pre(const std::string& _instance_name,
+		                const instance_configuration_map& _instance_configs,
+		                std::list<boost::any>& _rule_arguments,
+		                MsParamArray* _ms_param_array,
+		                irods::callback& _effect_handler) -> irods::error;
 
-    class pep_api_data_obj_unlink final
-    {
-    public:
-        pep_api_data_obj_unlink() = delete;
+		static auto post(const std::string& _instance_name,
+		                 const instance_configuration_map& _instance_configs,
+		                 std::list<boost::any>& _rule_arguments,
+		                 MsParamArray* _ms_param_array,
+		                 irods::callback& _effect_handler) -> irods::error;
 
-        static auto reset() noexcept -> void;
+	  private:
+		inline static size_type data_objects_ = 0;
+		inline static size_type size_in_bytes_ = 0;
+	}; // class pep_api_data_obj_rename
 
-        static auto pre(const std::string& _instance_name,
-                        const instance_configuration_map& _instance_configs,
-                        std::list<boost::any>& _rule_arguments,
-                        MsParamArray* _ms_param_array,
-                        irods::callback& _effect_handler) -> irods::error;
+	class pep_api_data_obj_unlink final
+	{
+	  public:
+		pep_api_data_obj_unlink() = delete;
 
-        static auto post(const std::string& _instance_name,
-                         const instance_configuration_map& _instance_configs,
-                         std::list<boost::any>& _rule_arguments,
-                         MsParamArray* _ms_param_array,
-                         irods::callback& _effect_handler) -> irods::error;
+		static auto reset() noexcept -> void;
 
-    private:
-        inline static size_type size_in_bytes_ = 0;
-    }; // class pep_api_data_obj_unlink
+		static auto pre(const std::string& _instance_name,
+		                const instance_configuration_map& _instance_configs,
+		                std::list<boost::any>& _rule_arguments,
+		                MsParamArray* _ms_param_array,
+		                irods::callback& _effect_handler) -> irods::error;
 
-    auto pep_api_data_obj_open_pre(const std::string& _instance_name,
-                                   const instance_configuration_map& _instance_configs,
-                                   std::list<boost::any>& _rule_arguments,
-                                   MsParamArray* _ms_param_array,
-                                   irods::callback& _effect_handler) -> irods::error;
+		static auto post(const std::string& _instance_name,
+		                 const instance_configuration_map& _instance_configs,
+		                 std::list<boost::any>& _rule_arguments,
+		                 MsParamArray* _ms_param_array,
+		                 irods::callback& _effect_handler) -> irods::error;
 
-    class pep_api_data_obj_close final
-    {
-    public:
-        pep_api_data_obj_close() = delete;
+	  private:
+		inline static size_type size_in_bytes_ = 0;
+	}; // class pep_api_data_obj_unlink
 
-        static auto reset() noexcept -> void;
+	auto pep_api_data_obj_open_pre(const std::string& _instance_name,
+	                               const instance_configuration_map& _instance_configs,
+	                               std::list<boost::any>& _rule_arguments,
+	                               MsParamArray* _ms_param_array,
+	                               irods::callback& _effect_handler) -> irods::error;
 
-        static auto pre(const std::string& _instance_name,
-                        const instance_configuration_map& _instance_configs,
-                        std::list<boost::any>& _rule_arguments,
-                        MsParamArray* _ms_param_array,
-                        irods::callback& _effect_handler) -> irods::error;
+	class pep_api_data_obj_close final
+	{
+	  public:
+		pep_api_data_obj_close() = delete;
 
-        static auto post(const std::string& _instance_name,
-                         const instance_configuration_map& _instance_configs,
-                         std::list<boost::any>& _rule_arguments,
-                         MsParamArray* _ms_param_array,
-                         irods::callback& _effect_handler) -> irods::error;
-    private:
-        inline static std::string path_;
-    }; // class pep_api_data_obj_close
+		static auto reset() noexcept -> void;
 
-    auto pep_api_mod_avu_metadata_pre(const std::string& _instance_name,
-                                      const instance_configuration_map& _instance_configs,
-                                      std::list<boost::any>& _rule_arguments,
-                                      MsParamArray* _ms_param_array,
-                                      irods::callback& _effect_handler) -> irods::error;
+		static auto pre(const std::string& _instance_name,
+		                const instance_configuration_map& _instance_configs,
+		                std::list<boost::any>& _rule_arguments,
+		                MsParamArray* _ms_param_array,
+		                irods::callback& _effect_handler) -> irods::error;
 
-    class pep_api_replica_close final
-    {
-    public:
-        pep_api_replica_close() = delete;
+		static auto post(const std::string& _instance_name,
+		                 const instance_configuration_map& _instance_configs,
+		                 std::list<boost::any>& _rule_arguments,
+		                 MsParamArray* _ms_param_array,
+		                 irods::callback& _effect_handler) -> irods::error;
 
-        static auto reset() noexcept -> void;
+	  private:
+		inline static std::string path_;
+	}; // class pep_api_data_obj_close
 
-        static auto pre(const std::string& _instance_name,
-                        const instance_configuration_map& _instance_configs,
-                        std::list<boost::any>& _rule_arguments,
-                        MsParamArray* _ms_param_array,
-                        irods::callback& _effect_handler) -> irods::error;
+	auto pep_api_mod_avu_metadata_pre(const std::string& _instance_name,
+	                                  const instance_configuration_map& _instance_configs,
+	                                  std::list<boost::any>& _rule_arguments,
+	                                  MsParamArray* _ms_param_array,
+	                                  irods::callback& _effect_handler) -> irods::error;
 
-        static auto post(const std::string& _instance_name,
-                         const instance_configuration_map& _instance_configs,
-                         std::list<boost::any>& _rule_arguments,
-                         MsParamArray* _ms_param_array,
-                         irods::callback& _effect_handler) -> irods::error;
-    private:
-        inline static std::string path_;
-    }; // class pep_api_replica_close
+	class pep_api_replica_close final
+	{
+	  public:
+		pep_api_replica_close() = delete;
 
-    class pep_api_rm_coll final
-    {
-    public:
-        pep_api_rm_coll() = delete;
+		static auto reset() noexcept -> void;
 
-        static auto reset() noexcept -> void;
+		static auto pre(const std::string& _instance_name,
+		                const instance_configuration_map& _instance_configs,
+		                std::list<boost::any>& _rule_arguments,
+		                MsParamArray* _ms_param_array,
+		                irods::callback& _effect_handler) -> irods::error;
 
-        static auto pre(const std::string& _instance_name,
-                        const instance_configuration_map& _instance_configs,
-                        std::list<boost::any>& _rule_arguments,
-                        MsParamArray* _ms_param_array,
-                        irods::callback& _effect_handler) -> irods::error;
+		static auto post(const std::string& _instance_name,
+		                 const instance_configuration_map& _instance_configs,
+		                 std::list<boost::any>& _rule_arguments,
+		                 MsParamArray* _ms_param_array,
+		                 irods::callback& _effect_handler) -> irods::error;
 
-        static auto post(const std::string& _instance_name,
-                         const instance_configuration_map& _instance_configs,
-                         std::list<boost::any>& _rule_arguments,
-                         MsParamArray* _ms_param_array,
-                         irods::callback& _effect_handler) -> irods::error;
+	  private:
+		inline static std::string path_;
+	}; // class pep_api_replica_close
 
-    private:
-        inline static size_type data_objects_ = 0;
-        inline static size_type size_in_bytes_ = 0;
-    }; // class pep_api_rm_coll
+	class pep_api_rm_coll final
+	{
+	  public:
+		pep_api_rm_coll() = delete;
 
-    class pep_api_touch final
-    {
-    public:
-        pep_api_touch() = delete;
+		static auto reset() noexcept -> void;
 
-        static auto reset() noexcept -> void;
+		static auto pre(const std::string& _instance_name,
+		                const instance_configuration_map& _instance_configs,
+		                std::list<boost::any>& _rule_arguments,
+		                MsParamArray* _ms_param_array,
+		                irods::callback& _effect_handler) -> irods::error;
 
-        static auto pre(const std::string& _instance_name,
-                        const instance_configuration_map& _instance_configs,
-                        std::list<boost::any>& _rule_arguments,
-                        MsParamArray* _ms_param_array,
-                        irods::callback& _effect_handler) -> irods::error;
+		static auto post(const std::string& _instance_name,
+		                 const instance_configuration_map& _instance_configs,
+		                 std::list<boost::any>& _rule_arguments,
+		                 MsParamArray* _ms_param_array,
+		                 irods::callback& _effect_handler) -> irods::error;
 
-        static auto post(const std::string& _instance_name,
-                         const instance_configuration_map& _instance_configs,
-                         std::list<boost::any>& _rule_arguments,
-                         MsParamArray* _ms_param_array,
-                         irods::callback& _effect_handler) -> irods::error;
+	  private:
+		inline static size_type data_objects_ = 0;
+		inline static size_type size_in_bytes_ = 0;
+	}; // class pep_api_rm_coll
 
-    private:
-        inline static std::string path_;
-        inline static bool exists_ = false;
-    }; // class pep_api_touch
+	class pep_api_touch final
+	{
+	  public:
+		pep_api_touch() = delete;
+
+		static auto reset() noexcept -> void;
+
+		static auto pre(const std::string& _instance_name,
+		                const instance_configuration_map& _instance_configs,
+		                std::list<boost::any>& _rule_arguments,
+		                MsParamArray* _ms_param_array,
+		                irods::callback& _effect_handler) -> irods::error;
+
+		static auto post(const std::string& _instance_name,
+		                 const instance_configuration_map& _instance_configs,
+		                 std::list<boost::any>& _rule_arguments,
+		                 MsParamArray* _ms_param_array,
+		                 irods::callback& _effect_handler) -> irods::error;
+
+	  private:
+		inline static std::string path_;
+		inline static bool exists_ = false;
+	}; // class pep_api_touch
 } // namespace irods::handler
 
 #endif // IRODS_LOGICAL_QUOTAS_HANDLER_HPP
-
