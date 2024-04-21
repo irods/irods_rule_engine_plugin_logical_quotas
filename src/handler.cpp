@@ -90,8 +90,6 @@ namespace
 	// Function Prototypes
 	//
 
-	auto get_collection_username(rsComm_t& _conn, fs::path _p) -> std::optional<std::string>;
-
 	auto get_monitored_collection_info(rsComm_t& _conn, const irods::attributes& _attrs, const fs::path& _p)
 		-> quotas_info_type;
 
@@ -155,17 +153,6 @@ namespace
 	//
 	// Function Implementations
 	//
-
-	auto get_collection_username(rsComm_t& _conn, fs::path _p) -> std::optional<std::string>
-	{
-		const auto gql = fmt::format("select COLL_OWNER_NAME where COLL_NAME = '{}'", _p.c_str());
-
-		for (auto&& row : irods::query{&_conn, gql}) {
-			return row[0];
-		}
-
-		return std::nullopt;
-	}
 
 	auto get_monitored_collection_info(rsComm_t& _conn, const irods::attributes& _attrs, const fs::path& _p)
 		-> quotas_info_type
