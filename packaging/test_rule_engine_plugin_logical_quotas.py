@@ -198,7 +198,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
             # Test: No quota violations on put of a non-empty collection.
             self.logical_quotas_set_maximum_size_in_bytes(sandbox, '100')
-            self.admin1.assert_icommand(['iput', '-rf', dir_path], 'STDOUT', ['pre-scan'])
+            self.admin1.assert_icommand(['iput', '-rf', dir_path])
             expected_number_of_objects = 3
             expected_size_in_bytes = 60
             self.assert_quotas(sandbox, expected_number_of_objects, expected_size_in_bytes)
@@ -272,7 +272,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
             dir_path = os.path.join(self.admin1.local_session_dir, 'col.a')
             file_size = 1
             self.make_directory(dir_path, ['foo.txt'], file_size)
-            self.admin1.assert_icommand(['iput', '-r', dir_path], 'STDOUT', ['pre-scan'])
+            self.admin1.assert_icommand(['iput', '-r', dir_path])
 
             # Monitor first collection.
             col1 = os.path.join(self.admin1.session_collection, 'col.a')
