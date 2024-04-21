@@ -115,13 +115,16 @@ The plugin configuration must be placed ahead of all plugins that define any of 
 - pep_api_data_obj_put_pre
 - pep_api_data_obj_rename_post
 - pep_api_data_obj_rename_pre
-- pep_api_data_obj_unlink_ppost
+- pep_api_data_obj_unlink_post
 - pep_api_data_obj_unlink_pre
+- pep_api_mod_avu_metadata_pre
 - pep_api_replica_close_post
 - pep_api_replica_close_pre
 - pep_api_replica_open_pre
 - pep_api_rm_coll_post
 - pep_api_rm_coll_pre
+- pep_api_touch_post
+- pep_api_touch_pre
 
 Even though this plugin will process PEPs first due to its positioning, subsequent Rule Engine Plugins (REP) will 
 still be allowed to process the same PEPs without any issues.
