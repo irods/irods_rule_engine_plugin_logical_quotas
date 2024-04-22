@@ -1229,7 +1229,29 @@ namespace irods::handler
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
 			if (auto collection = get_monitored_parent_collection(conn, attrs, input->objPath); collection) {
-				size_in_bytes_ = fs::server::data_object_size(conn, input->objPath);
+				try {
+					size_in_bytes_ = fs::server::data_object_size(conn, input->objPath);
+				}
+				catch (const fs::filesystem_error& e) {
+					// The filesystem library's data_object_size() function will throw an exception
+					// if the data object does not have any good replicas. Because the REP is designed
+					// to track the data size of good replicas, the only reasonable step is to leave
+					// the data size as is.
+					//
+					// Attempting to define rules for handling data objects without good replicas
+					// contains too many challenges. Relying on the admin to recalculate the totals is
+					// the best/safest approach.
+					if (e.code().value() == SYS_NO_GOOD_REPLICA) {
+						log::rule_engine::info("Logical Quotas: Removal of data object [{}] will not affect total "
+						                       "number of bytes. Data object does not have any good replicas.",
+						                       input->objPath);
+					}
+					else {
+						log::rule_engine::error(e.what());
+						addRErrorMsg(&get_rei(_effect_handler).rsComm->rError, e.code().value(), e.what());
+						return ERROR(e.code().value(), e.what());
+					}
+				}
 			}
 		}
 		catch (const irods::exception& e) {
