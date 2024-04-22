@@ -43,6 +43,7 @@ $ ils
 ```
 
 ## Requirements
+
 - iRODS v4.3.0
 - irods-dev package
 - irods-runtime package
@@ -50,6 +51,7 @@ $ ils
 - irods-externals-json package
 
 ## Compiling
+
 ```bash
 $ git clone https://github.com/irods/irods_rule_engine_plugin_logical_quotas
 $ cd irods_rule_engine_plugin_logical_quotas
@@ -64,6 +66,7 @@ irods-rule-engine-plugin-logical-quotas-<plugin_version>-<os>-<arch>.<deb|rpm>
 ```
 
 ## Installing
+
 Ubuntu:
 ```bash
 $ sudo dpkg -i irods-rule-engine-plugin-logical-quotas-*.deb
@@ -79,6 +82,7 @@ should be similar to the following:
 ```
 
 ## Configuration
+
 To enable, prepend the following plugin configuration to the list of rule engines in `/etc/irods/server_config.json`. 
 ```javascript
 "rule_engines": [
@@ -140,6 +144,7 @@ The _data_size_ specific query may result in an overcount of bytes on an activel
 data object having different sizes. For this situation, consider using slightly larger quota limits.
 
 ## How To Use
+
 **IMPORTANT NOTE:** To invoke rules provided by the plugin, the only requirement is that the user be a *rodsadmin*. The *rodsadmin* user
 does not need permissions set on the target collection.
 
@@ -158,6 +163,7 @@ The following operations are supported:
 - logical_quotas_unset_total_size_in_bytes
 
 ### Invoking operations via the Plugin
+
 To invoke an operation through the plugin, JSON must be passed using the following structure:
 ```javascript
 {
@@ -206,12 +212,14 @@ The JSON output will be printed to the terminal and have the following structure
 The **keys** are derived from the **namespace** and **metadata_attribute_names** defined by the plugin configuration.
 
 ### Invoking operations via the Native Rule Language
+
 Here, we demonstrate how to start monitoring a collection just like in the section above.
 ```bash
 $ irule -r irods_rule_engine_plugin-irods_rule_language-instance 'logical_quotas_start_monitoring_collection(*col)' '*col=/tempZone/home/rods' ruleExecOut
 ```
 
 ## Stream Operations
+
 With previous iterations of this plugin, changes in data were tracked and checked for violations across all
 stream-based operations in real-time. However, with the introduction of intermediate replicas and logical locking
 in iRODS v4.2.9, maintaining this behavior became complex. Due to the complexity, the handling of quotas has been
@@ -223,3 +231,11 @@ relaxed. The most important changes are as follows:
 These changes have the following effects:
 - The plugin allows stream-based writes to violate the maximum bytes quota once.
 - Subsequent stream-based creates and writes will be denied until the quotas are out of violation.
+
+## Questions and Answers
+
+### Sometimes, the total number of bytes for my collection doesn't change when I remove a data object. Why?
+
+When it comes to tracking the total number of bytes in use, only **good** replicas are considered. If the data object being removed has no **good** replicas, the plugin will leave the total number of bytes as is. The reason for this is due to there not being a clear path forward for determining which replica's data size should be used for the update. Therefore, the recommendation is for administrators to recalculate the quota totals periodically.
+
+Remember, the plugin is designed to track the totals of **good** replicas only.
