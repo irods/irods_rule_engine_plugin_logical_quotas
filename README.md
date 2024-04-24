@@ -239,3 +239,9 @@ These changes have the following effects:
 When it comes to tracking the total number of bytes in use, only **good** replicas are considered. If the data object being removed has no **good** replicas, the plugin will leave the total number of bytes as is. The reason for this is due to there not being a clear path forward for determining which replica's data size should be used for the update. Therefore, the recommendation is for administrators to recalculate the quota totals periodically.
 
 Remember, the plugin is designed to track the totals of **good** replicas only.
+
+### What are the rules around shared monitored nested collections?
+
+Anytime a user performs an operation that results in a quota update, that user MUST have **modify_object** permissions on ALL monitored parent collections. To reduce the management complexity of this, consider the following:
+- Avoid monitoring collections that have parent collections which are already being monitored
+- Use groups to simplify permission management
