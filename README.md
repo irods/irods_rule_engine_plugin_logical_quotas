@@ -42,49 +42,30 @@ $ ils
   bar
 ```
 
-## Requirements
+## Build Dependencies
 
-- iRODS v4.3.0
-- irods-dev package
-- irods-runtime package
-- irods-externals-boost package
-- irods-externals-json package
+- iRODS development package
+- iRODS runtime package
+- iRODS externals package for boost
+- iRODS externals package for fmt
+- iRODS externals package for nlohmann-json
+- iRODS externals package for spdlog
+- OpenSSL development package
 
-## Compiling
+## Building
 
+To build, follow the normal CMake steps.
 ```bash
-$ git clone https://github.com/irods/irods_rule_engine_plugin_logical_quotas
-$ cd irods_rule_engine_plugin_logical_quotas
-$ git submodule update --init
-$ mkdir _build && cd _build
-$ cmake -GNinja ..
-$ ninja package
-```
-After compiling, you should now have a `deb` or `rpm` package with a name similar to the following:
-```bash
-irods-rule-engine-plugin-logical-quotas-<plugin_version>-<os>-<arch>.<deb|rpm>
-```
-
-## Installing
-
-Ubuntu:
-```bash
-$ sudo dpkg -i irods-rule-engine-plugin-logical-quotas-*.deb
-```
-CentOS:
-```bash
-$ su -c yum localinstall irods-rule-engine-plugin-logical-quotas-*.rpm
-```
-If the installation was successful, you should now have a new shared library. The full path to the library
-should be similar to the following:
-```
-<irods_lib_home>/plugins/rule_engines/libirods_rule_engine_plugin-logical_quotas.so
+mkdir build # Preferably outside of the repository.
+cd build
+cmake /path/to/repository
+make package # Pass -j to use more parallelism.
 ```
 
 ## Configuration
 
 To enable, prepend the following plugin configuration to the list of rule engines in `/etc/irods/server_config.json`. 
-```javascript
+```js
 "rule_engines": [
     {
         "instance_name": "irods_rule_engine_plugin-logical_quotas-instance",
@@ -135,8 +116,8 @@ still be allowed to process the same PEPs without any issues.
 
 Before you can start monitoring collections, you'll also need to add the following specific queries to your zone:
 ```bash
-$ iadmin asq "select count(distinct data_id) from R_DATA_MAIN d inner join R_COLL_MAIN c on d.coll_id = c.coll_id where coll_name like ?" logical_quotas_count_data_objects_recursive
-$ iadmin asq "select sum(t.data_size) from (select data_id, data_size from R_DATA_MAIN d inner join R_COLL_MAIN c on d.coll_id = c.coll_id where coll_name like ? and data_is_dirty in ('1', '4') group by data_id, data_size) as t" logical_quotas_sum_data_object_sizes_recursive
+iadmin asq "select count(distinct data_id) from R_DATA_MAIN d inner join R_COLL_MAIN c on d.coll_id = c.coll_id where coll_name like ?" logical_quotas_count_data_objects_recursive
+iadmin asq "select sum(t.data_size) from (select data_id, data_size from R_DATA_MAIN d inner join R_COLL_MAIN c on d.coll_id = c.coll_id where coll_name like ? and data_is_dirty in ('1', '4') group by data_id, data_size) as t" logical_quotas_sum_data_object_sizes_recursive
 ```
 These queries are required due to a limitation in GenQuery's ability to distinguish between multiple replicas of the same data object.
 
@@ -182,12 +163,12 @@ To invoke an operation through the plugin, JSON must be passed using the followi
 
 Use `irule` to execute an operation. For example, we can start monitoring a collection by running the following:
 ```bash
-$ irule -r irods_rule_engine_plugin-logical_quotas-instance '{"operation": "logical_quotas_start_monitoring_collection", "collection": "/tempZone/home/rods"}' null ruleExecOut
+irule -r irods_rule_engine_plugin-logical_quotas-instance '{"operation": "logical_quotas_start_monitoring_collection", "collection": "/tempZone/home/rods"}' null ruleExecOut
 ```
 
 We can set a maximum limit on the number of data objects by running the following:
 ```bash
-$ irule -r irods_rule_engine_plugin-logical_quotas-instance '{"operation": "logical_quotas_set_maximum_number_of_data_objects", "collection": "/tempZone/home/rods", "value": "100"}' null ruleExecOut
+irule -r irods_rule_engine_plugin-logical_quotas-instance '{"operation": "logical_quotas_set_maximum_number_of_data_objects", "collection": "/tempZone/home/rods", "value": "100"}' null ruleExecOut
 ```
 If no errors occurred, then `/tempZone/home/rods` will only be allowed to contain 100 data objects. However, Logical
 Quotas does not guarantee that the numbers produced perfectly reflect the total number of data objects under a collection.
@@ -198,7 +179,7 @@ to run periodically to keep the numbers as accurate as possible.
 
 You can also retrieve the quota status for a collection as JSON by invoking `logical_quotas_get_collection_status`, for example:
 ```bash
-$ irule -r irods_rule_engine_plugin-logical_quotas-instance '{"operation": "logical_quotas_get_collection_status", "collection": "/tempZone/home/rods"}' null ruleExecOut
+irule -r irods_rule_engine_plugin-logical_quotas-instance '{"operation": "logical_quotas_get_collection_status", "collection": "/tempZone/home/rods"}' null ruleExecOut
 ```
 The JSON output will be printed to the terminal and have the following structure:
 ```javascript
@@ -215,7 +196,7 @@ The **keys** are derived from the **namespace** and **metadata_attribute_names**
 
 Here, we demonstrate how to start monitoring a collection just like in the section above.
 ```bash
-$ irule -r irods_rule_engine_plugin-irods_rule_language-instance 'logical_quotas_start_monitoring_collection(*col)' '*col=/tempZone/home/rods' ruleExecOut
+irule -r irods_rule_engine_plugin-irods_rule_language-instance 'logical_quotas_start_monitoring_collection(*col)' '*col=/tempZone/home/rods' ruleExecOut
 ```
 
 ## Stream Operations
