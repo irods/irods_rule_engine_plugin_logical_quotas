@@ -887,6 +887,36 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
             self.assert_quotas(col, expected_number_of_objects=0, expected_size_in_bytes=len(contents))
             self.user.assert_icommand(['imeta', 'ls', '-C', col], 'STDOUT') # Debugging.
 
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_rodsadmin_does_not_need_permission_on_the_collection_to_start_monitoring_it__issue_76(self):
+        config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+            test_collection = f'{self.admin1.session_collection}/lq_col76'
+            self.admin1.assert_icommand(['imkdir', test_collection])
+
+            try:
+                test_group = 'lq_group76'
+                self.admin1.assert_icommand(['iadmin', 'mkgroup', test_group])
+
+                # Make it so that the group is the only entity that has permissions on the collection.
+                self.admin1.assert_icommand(['ichmod', 'own', test_group, test_collection])
+                self.admin1.assert_icommand(['ichmod', 'null', self.admin1.username, test_collection])
+                self.admin1.assert_icommand(['ils', '-A', test_collection], 'STDOUT') # Debugging.
+
+                # Show the rodsadmin is able to instruct the plugin to start monitoring the collection
+                # even though they don't have permissions set on the data object.
+                json_string = json.dumps({'operation': 'logical_quotas_start_monitoring_collection', 'collection': test_collection})
+                self.admin1.assert_icommand(['irule', '-r', 'irods_rule_engine_plugin-logical_quotas-instance', json_string, 'null', 'null'])
+                self.admin1.assert_icommand(['imeta', 'ls', '-C', test_collection], 'STDOUT') # Debugging.
+
+            finally:
+                self.admin1.run_icommand(['iadmin', 'rmgroup', test_group])
+                self.admin1.run_icommand(['ichmod', '-M', 'own', self.admin1.username, test_collection])
+                self.admin1.run_icommand(['irmdir', test_collection])
+
     #
     # Utility Functions
     #
