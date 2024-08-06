@@ -563,10 +563,10 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
             # Assert that the quota values are what we expect them to be.
             values = self.get_logical_quotas_attribute_values(col, include_max_values=True)
-            self.assertEquals(values[self.maximum_number_of_data_objects_attribute()], 10)
-            self.assertEquals(values[self.maximum_size_in_bytes_attribute()],          1000)
-            self.assertEquals(values[self.total_number_of_data_objects_attribute()],   0)
-            self.assertEquals(values[self.total_size_in_bytes_attribute()],            0)
+            self.assertEqual(values[self.maximum_number_of_data_objects_attribute()], 10)
+            self.assertEqual(values[self.maximum_size_in_bytes_attribute()],          1000)
+            self.assertEqual(values[self.total_number_of_data_objects_attribute()],   0)
+            self.assertEqual(values[self.total_size_in_bytes_attribute()],            0)
 
             expected_output = ['-169000 SYS_NOT_ALLOWED']
 
@@ -584,10 +584,10 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
             # Show that the quota values have not changed.
             values = self.get_logical_quotas_attribute_values(col, include_max_values=True)
-            self.assertEquals(values[self.maximum_number_of_data_objects_attribute()], 10)
-            self.assertEquals(values[self.maximum_size_in_bytes_attribute()],          1000)
-            self.assertEquals(values[self.total_number_of_data_objects_attribute()],   0)
-            self.assertEquals(values[self.total_size_in_bytes_attribute()],            0)
+            self.assertEqual(values[self.maximum_number_of_data_objects_attribute()], 10)
+            self.assertEqual(values[self.maximum_size_in_bytes_attribute()],          1000)
+            self.assertEqual(values[self.total_number_of_data_objects_attribute()],   0)
+            self.assertEqual(values[self.total_size_in_bytes_attribute()],            0)
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_executing_logical_quotas_rules_do_not_fail_when_group_permissions_are_present__issue_46(self):
@@ -940,8 +940,8 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     def assert_quotas(self, coll, expected_number_of_objects, expected_size_in_bytes):
         values = self.get_logical_quotas_attribute_values(coll)
-        self.assertEquals(values[self.total_number_of_data_objects_attribute()], expected_number_of_objects)
-        self.assertEquals(values[self.total_size_in_bytes_attribute()],          expected_size_in_bytes)
+        self.assertEqual(values[self.total_number_of_data_objects_attribute()], expected_number_of_objects)
+        self.assertEqual(values[self.total_size_in_bytes_attribute()],          expected_size_in_bytes)
 
     def enable_rule_engine_plugin(self, config, namespace=None):
         config.server_config['log_level']['rule_engine'] = 'trace'
