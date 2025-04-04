@@ -1,22 +1,18 @@
-from __future__ import print_function
-
-import os
-import sys
-import shutil
+import contextlib
 import json
+import os
+import shutil
 import subprocess
+import sys
 import textwrap
-
-if sys.version_info < (2, 7):
-    import unittest2 as unittest
-else:
-    import unittest
+import unittest
 
 from . import session
-from .. import test
 from .. import lib
 from .. import paths
+from .. import test
 from ..configuration import IrodsConfig
+from irods.controller import IrodsController
 
 admins = [('otherrods', 'rods'), ('anotherrods', 'rods')]
 users  = [('alice', 'apass')]
@@ -56,11 +52,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_control_rules(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             # Given that most logical quotas specific commands are tested throughout
             # the test suite, only a subset will be tested here.
 
@@ -117,19 +109,21 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
             })
             lib.update_json_file_from_dict(config.server_config_path, config.server_config)
 
+            # Reload configuration after edits are made so that they take effect in the server.
+            IrodsController().reload_configuration()
+
             filename = os.path.join(self.admin1.local_session_dir, 'foo.txt')
             lib.make_file(filename, 1, 'arbitrary')
             error_msg = 'Failed to find configuration for rule engine plugin instance [irods_rule_engine_plugin-logical_quotas-instance]'
             self.admin1.assert_icommand_fail(['iput', filename], 'STDOUT', [error_msg])
             os.remove(filename)
 
+        # Reload configuration after exiting the context so that the original settings take effect.
+        IrodsController().reload_configuration()
+
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_put_data_object(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             sandbox = self.admin1.session_collection
             self.logical_quotas_start_monitoring_collection(sandbox)
             self.logical_quotas_set_maximum_number_of_data_objects(sandbox, '2')
@@ -170,11 +164,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_put_collection(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             sandbox = self.admin1.session_collection
             self.logical_quotas_start_monitoring_collection(sandbox)
             self.logical_quotas_set_maximum_number_of_data_objects(sandbox, '1')
@@ -217,11 +207,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_copy_data_object(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             col1 = self.admin1.session_collection
             self.logical_quotas_start_monitoring_collection(col1)
             self.logical_quotas_set_maximum_number_of_data_objects(col1, '4')
@@ -263,11 +249,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_copy_collection(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             # Create and put directory holding one file into iRODS.
             dir_path = os.path.join(self.admin1.local_session_dir, 'col.a')
             file_size = 1
@@ -305,11 +287,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_rename_data_object(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             col1 = self.admin1.session_collection
             self.logical_quotas_start_monitoring_collection(col1)
             self.logical_quotas_set_maximum_number_of_data_objects(col1, '4')
@@ -375,11 +353,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_rename_collection(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             col1 = os.path.join(self.admin1.session_collection, 'col.a')
             self.admin1.assert_icommand(['imkdir', col1])
             self.logical_quotas_start_monitoring_collection(col1)
@@ -423,11 +397,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_stream_data_object(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             sandbox = self.admin1.session_collection
             self.logical_quotas_start_monitoring_collection(sandbox)
             self.logical_quotas_set_maximum_number_of_data_objects(sandbox, '1')
@@ -458,12 +428,9 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_unset_maximum_quotas_when_not_tracking__issue_5(self):
-        config = IrodsConfig()
         col = self.admin1.session_collection
 
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             self.logical_quotas_start_monitoring_collection(col)
             self.admin1.assert_icommand(['imeta', 'ls', '-C', col], 'STDOUT', [self.total_number_of_data_objects_attribute(),
                                                                                self.total_size_in_bytes_attribute()])
@@ -485,12 +452,9 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_violation_during_recursive_put__issue_6(self):
-        config = IrodsConfig()
         col = self.admin1.session_collection
 
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             self.logical_quotas_start_monitoring_collection(col)
             self.logical_quotas_set_maximum_number_of_data_objects(col, '2')
             self.logical_quotas_set_maximum_size_in_bytes(col, '100')
@@ -510,12 +474,9 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_logical_quotas_get_collection_status__issue_28(self):
-        config = IrodsConfig()
         col = self.admin1.session_collection
 
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             self.logical_quotas_start_monitoring_collection(col)
             self.logical_quotas_set_maximum_number_of_data_objects(col, '2')
 
@@ -550,12 +511,9 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_adding_duplicate_attribute_names_with_different_values_or_units_is_not_allowed__issue_36(self):
-        config = IrodsConfig()
         col = self.admin1.session_collection
 
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             self.logical_quotas_start_monitoring_collection(col)
             self.logical_quotas_set_maximum_number_of_data_objects(col, '10')
             self.logical_quotas_set_maximum_size_in_bytes(col, '1000')
@@ -591,7 +549,6 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_executing_logical_quotas_rules_do_not_fail_when_group_permissions_are_present__issue_46(self):
-        config = IrodsConfig()
         col = self.admin1.session_collection
         group = 'issue_46_group'
 
@@ -600,9 +557,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
             self.admin1.assert_icommand(['iadmin', 'atg', group, self.admin2.username])
             self.admin1.assert_icommand(['ichmod', 'own', group, col])
 
-            with lib.file_backed_up(config.server_config_path):
-                self.enable_rule_engine_plugin(config)
-
+            with self.rule_engine_plugin_enabled():
                 # Show that the presence of group permissions no longer trip the plugin.
                 # The only requirement is that the user invoking the rule must be an administrator.
                 # The invoking user does not need permissions on the target collection.
@@ -619,11 +574,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_executing_logical_quotas_rules_require_that_the_user_be_an_administrator(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             # Even though the user can use imeta to set the correct metadata for the plugin
             # to track information, the user is not allowed to use the plugin's rules to do so.
             # The Metadata Guard REP exists to cover the imeta use-case.
@@ -633,11 +584,13 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_recalculating_totals_produce_the_correct_results_in_a_multi_replica_scenario__issue_48(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        # Define variables outside of where things can go wrong so that clean up is (more) guaranteed.
+        col = self.admin1.session_collection
+        other_col = os.path.join(col, 'other_collection')
+        data_object_1 = os.path.join(col, 'data_object_1')
+        data_object_2 = os.path.join(col, 'data_object_2')
+        data_object_3 = os.path.join(other_col, 'data_object_3')
+        with self.rule_engine_plugin_enabled():
             try:
                 # Create a resource hierarchy containing two unixfilesystem resources
                 # under a replication resource.
@@ -655,22 +608,17 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
                 # Create three data objects under the replication resource. Two in the
                 # session collection and one in a sub-collection.
-                col = self.admin1.session_collection
                 self.logical_quotas_start_monitoring_collection(col)
 
                 # Show that the plugin did not detect any data objects.
                 self.assert_quotas(col, expected_number_of_objects=0, expected_size_in_bytes=0)
 
-                data_object_1 = os.path.join(col, 'data_object_1')
                 self.admin1.assert_icommand(['istream', 'write', '-R', repl_resc, data_object_1], input='12345')
 
-                data_object_2 = os.path.join(col, 'data_object_2')
                 self.admin1.assert_icommand(['istream', 'write', '-R', repl_resc, data_object_2], input='12345')
 
-                other_col = os.path.join(col, 'other_collection')
                 self.admin1.assert_icommand(['imkdir', other_col])
 
-                data_object_3 = os.path.join(other_col, 'data_object_3')
                 self.admin1.assert_icommand(['istream', 'write', '-R', repl_resc, data_object_3], input='12345')
 
                 # Show that the plugin correctly recalculates the total number of data objects
@@ -690,11 +638,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_group_owned_collections_do_not_require_the_admin_to_manually_change_acls__issue_35(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             zone_name = self.admin1.zone_name
             group_name = 'testgroup_issue_36'
             group_home_col = os.path.join('/', zone_name, 'home', group_name)
@@ -729,11 +673,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_plugin_supports_touch_api_PEPs__issue_62(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             col = self.user.session_collection
             self.logical_quotas_start_monitoring_collection(col)
 
@@ -750,12 +690,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
         # This test verifies that regular users are allowed to invoke logical quotas rules indirectly.
         # That is, a non-admin user will not be blocked by the REP unless they try to invoke a logical
         # quotas rule via irule.
-
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             col = self.user.session_collection
             self.logical_quotas_start_monitoring_collection(col)
 
@@ -769,11 +704,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_plugin_does_not_crash_on_unsupported_rule_text_executed_via_irule_F__issue_6831(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             # Create a rule file that contains rule code that isn't supported by the plugin.
             # This originally caused the plugin to throw an exception which lead to the agent
             # crashing.
@@ -806,11 +737,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_quotas_do_not_block_non_administrators_from_creating_or_writing_data_objects__issue_84(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             sandbox = self.user.session_collection
             self.logical_quotas_start_monitoring_collection(sandbox)
 
@@ -833,11 +760,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_data_objects_containing_single_quotes_in_data_name_can_be_removed__issue_94(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             col = self.user.session_collection
             self.logical_quotas_start_monitoring_collection(col)
 
@@ -859,11 +782,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_data_objects_having_only_stale_replicas_can_be_removed__issue_111(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             col = self.user.session_collection
             self.logical_quotas_start_monitoring_collection(col)
 
@@ -889,11 +808,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_rodsadmin_does_not_need_permission_on_the_collection_to_start_monitoring_it__issue_76(self):
-        config = IrodsConfig()
-
-        with lib.file_backed_up(config.server_config_path):
-            self.enable_rule_engine_plugin(config)
-
+        with self.rule_engine_plugin_enabled():
             test_collection = f'{self.admin1.session_collection}/lq_col76'
             self.admin1.assert_icommand(['imkdir', test_collection])
 
@@ -943,22 +858,36 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
         self.assertEqual(values[self.total_number_of_data_objects_attribute()], expected_number_of_objects)
         self.assertEqual(values[self.total_size_in_bytes_attribute()],          expected_size_in_bytes)
 
-    def enable_rule_engine_plugin(self, config, namespace=None):
-        config.server_config['log_level']['rule_engine'] = 'trace'
-        config.server_config['plugin_configuration']['rule_engines'].insert(0, {
-            'instance_name': 'irods_rule_engine_plugin-logical_quotas-instance',
-            'plugin_name': 'irods_rule_engine_plugin-logical_quotas',
-            'plugin_specific_configuration': {
-                'namespace': self.logical_quotas_namespace() if namespace == None else namespace,
-                'metadata_attribute_names': {
-                    'maximum_number_of_data_objects': self.maximum_number_of_data_objects_attribute_name(),
-                    'maximum_size_in_bytes': self.maximum_size_in_bytes_attribute_name(),
-                    'total_number_of_data_objects': self.total_number_of_data_objects_attribute_name(),
-                    'total_size_in_bytes': self.total_size_in_bytes_attribute_name()
+    @contextlib.contextmanager
+    def rule_engine_plugin_enabled(self, namespace=None):
+        config = IrodsConfig()
+        with lib.file_backed_up(config.server_config_path):
+            config.server_config['log_level']['rule_engine'] = 'trace'
+            config.server_config['plugin_configuration']['rule_engines'].insert(0, {
+                'instance_name': 'irods_rule_engine_plugin-logical_quotas-instance',
+                'plugin_name': 'irods_rule_engine_plugin-logical_quotas',
+                'plugin_specific_configuration': {
+                    'namespace': self.logical_quotas_namespace() if namespace == None else namespace,
+                    'metadata_attribute_names': {
+                        'maximum_number_of_data_objects': self.maximum_number_of_data_objects_attribute_name(),
+                        'maximum_size_in_bytes': self.maximum_size_in_bytes_attribute_name(),
+                        'total_number_of_data_objects': self.total_number_of_data_objects_attribute_name(),
+                        'total_size_in_bytes': self.total_size_in_bytes_attribute_name()
+                    }
                 }
-            }
-        })
-        lib.update_json_file_from_dict(config.server_config_path, config.server_config)
+            })
+            lib.update_json_file_from_dict(config.server_config_path, config.server_config)
+
+            try:
+                # Reload configuration after edits are made so that they take effect in the server.
+                IrodsController().reload_configuration()
+                yield
+
+            finally:
+                pass
+
+        # Reload configuration after exiting the context so that the original settings take effect.
+        IrodsController().reload_configuration()
 
     def maximum_number_of_data_objects_attribute_name(self):
         return 'maximum_number_of_data_objects'
@@ -988,8 +917,11 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
         return self.logical_quotas_namespace() + '::' + self.total_size_in_bytes_attribute_name()
 
     def get_logical_quotas_attribute_values(self, collection, include_max_values=False):
-        query = '"select META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE where COLL_NAME = \'{0}\'"'.format(collection)
-        utf8_query_result_string, ec, rc = self.admin1.run_icommand(['iquest', '%s=%s', query])
+        query = f"select META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE where COLL_NAME = '{collection}'"
+        utf8_query_result_string, err, rc = self.admin1.run_icommand(["iquest", "%s=%s", query])
+
+        self.assertEqual(len(err), 0, msg=f"stderr: {err}")
+        self.assertEqual(rc, 0)
 
         attrs = [
             self.total_number_of_data_objects_attribute(),
