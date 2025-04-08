@@ -1,3 +1,4 @@
 *.swp
 .clangd/
 compile_commands.json
+tags
