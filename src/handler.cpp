@@ -4,23 +4,24 @@
 #include "utilities.hpp"
 
 #include <irods/client_connection.hpp>
+#include <irods/escape_utilities.hpp>
 #include <irods/execCmd.h>
+#include <irods/filesystem.hpp>
+#include <irods/genQuery.h>
+#include <irods/irods_get_l1desc.hpp>
+#include <irods/irods_logger.hpp>
+#include <irods/irods_query.hpp>
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_state_table.h>
-#include <irods/msParam.h>
-#include <irods/genQuery.h>
-#include <irods/objDesc.hpp>
-#include <irods/rodsDef.h>
-#include <irods/irods_query.hpp>
-#include <irods/irods_logger.hpp>
-#include <irods/query_builder.hpp>
-#include <irods/irods_get_l1desc.hpp>
 #include <irods/modAVUMetadata.h>
-#include <irods/rodsErrorTable.h>
+#include <irods/msParam.h>
+#include <irods/objDesc.hpp>
+#include <irods/query_builder.hpp>
 #include <irods/replica.hpp>
+#include <irods/rodsDef.h>
+#include <irods/rodsErrorTable.h>
 #include <irods/scoped_client_identity.hpp>
 #include <irods/scoped_permission.hpp>
-#include <irods/filesystem.hpp>
 
 #define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
 #include <irods/filesystem.hpp>
@@ -159,8 +160,8 @@ namespace
 	{
 		quotas_info_type info;
 
-		const auto gql =
-			fmt::format("select META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE where COLL_NAME = '{}'", _p.c_str());
+		const auto gql = fmt::format("select META_COLL_ATTR_NAME, META_COLL_ATTR_VALUE where COLL_NAME = '{}'",
+		                             irods::single_quotes_to_hex(_p.c_str()));
 
 		for (auto&& row : irods::query{&_conn, gql}) {
 			// clang-format off
@@ -212,7 +213,7 @@ namespace
 	{
 		const auto gql =
 			fmt::format("select META_COLL_ATTR_NAME where COLL_NAME = '{}' and META_COLL_ATTR_NAME = '{}' || = '{}'",
-		                _p.c_str(),
+		                irods::single_quotes_to_hex(_p.c_str()),
 		                _attrs.total_number_of_data_objects(),
 		                _attrs.total_size_in_bytes());
 
@@ -243,8 +244,8 @@ namespace
 		size_type objects = 0;
 		size_type bytes = 0;
 
-		const auto gql =
-			fmt::format("select count(DATA_NAME), sum(DATA_SIZE) where COLL_NAME = '{0}' || like '{0}/%'", _p.c_str());
+		const auto gql = fmt::format("select count(DATA_NAME), sum(DATA_SIZE) where COLL_NAME = '{0}' || like '{0}/%'",
+		                             irods::single_quotes_to_hex(_p.c_str()));
 
 		for (auto&& row : irods::query{&_conn, gql}) {
 			objects = !row[0].empty() ? std::stoll(row[0]) : 0;
@@ -1443,7 +1444,7 @@ namespace irods::handler
 			if (iter != std::end(attr_list)) {
 				const auto gql = fmt::format("select META_COLL_ATTR_NAME "
 				                             "where COLL_NAME = '{}' and META_COLL_ATTR_NAME = '{}'",
-				                             input->arg2,
+				                             irods::single_quotes_to_hex(input->arg2),
 				                             **iter);
 
 				if (irods::query{&conn, gql}.size() > 0) {
