@@ -776,8 +776,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
             self.user.assert_icommand(['irm', '-f', data_object])
             self.user.assert_icommand(['ils', '-l', col], 'STDOUT') # Debugging.
             self.assertFalse(lib.replica_exists(self.user, data_object, 0))
-            # TODO(#113): expected_size_in_bytes will need to be updated once issue is resolved.
-            self.assert_quotas(col, expected_number_of_objects=0, expected_size_in_bytes=len(contents))
+            self.assert_quotas(col, expected_number_of_objects=0, expected_size_in_bytes=0)
             self.user.assert_icommand(['imeta', 'ls', '-C', col], 'STDOUT') # Debugging.
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
