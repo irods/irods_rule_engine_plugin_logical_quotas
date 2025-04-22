@@ -55,8 +55,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 include(GNUInstallDirs)
 
 find_package(nlohmann_json "3.6.1" REQUIRED)
-find_package(fmt "8.1.1"
-  HINTS "${IRODS_EXTERNALS_FULLPATH_FMT}")
+find_package(fmt "8.1.1" REQUIRED)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED COMPONENTS Crypto SSL)
 
