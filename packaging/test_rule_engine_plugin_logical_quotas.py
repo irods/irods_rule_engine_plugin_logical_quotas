@@ -728,7 +728,7 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
                 self.admin1.run_icommand(['iadmin', 'rmgroup', group_name])
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
-    def test_plugin_supports_touch_api_PEPs__issue_62(self):
+    def test_plugin_supports_touch_api_PEPs__issue_62_128(self):
         config = IrodsConfig()
 
         with lib.file_backed_up(config.server_config_path):
@@ -737,13 +737,81 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
             col = self.user.session_collection
             self.logical_quotas_start_monitoring_collection(col)
 
+            # Set up the quotas (which this test will not exceed).
+            self.logical_quotas_set_maximum_number_of_data_objects(col, '2')
+
             # Show that the REP hasn't detected any data objects in the monitored collection.
             self.assert_quotas(col, expected_number_of_objects=0, expected_size_in_bytes=0)
 
             # Show that after creating a new data object via itouch, the REP correctly increments
             # the data object count by one.
-            self.user.assert_icommand(['itouch', 'foo'])
+            data_object_0 = os.path.join(col, 'foo')
+            self.user.assert_icommand(['itouch', data_object_0])
+            self.user.assert_icommand(['ils', '-l'], 'STDOUT') # Debugging.
             self.assert_quotas(col, expected_number_of_objects=1, expected_size_in_bytes=0)
+
+            # Show that executing itouch on an existing data object does not result in the data
+            # object count changing.
+            self.user.assert_icommand(['itouch', data_object_0])
+            self.user.assert_icommand(['ils', '-l'], 'STDOUT') # Debugging.
+            self.assert_quotas(col, expected_number_of_objects=1, expected_size_in_bytes=0)
+
+            # Show that the quotas remain unchanged when --no-create is used. This is expected
+            # because --no-create instructs the server to NOT create new data objects.
+            data_object_1 = os.path.join(col, 'bar')
+            self.user.assert_icommand(['itouch', '--no-create', data_object_1])
+            self.user.assert_icommand(['ils', '-l'], 'STDOUT') # Debugging.
+            self.assertFalse(lib.replica_exists(self.user, data_object_1, 0))
+            self.assert_quotas(col, expected_number_of_objects=1, expected_size_in_bytes=0)
+
+            # Show that the quotas remain unchanged when -n is used. This is expected because
+            # -n is used to target an existing replica.
+            expected_output = ['OBJ_PATH_DOES_NOT_EXIST: Replica numbers cannot be used when creating new data objects.']
+            self.user.assert_icommand(['itouch', '-n', '0', data_object_1], 'STDOUT', expected_output)
+            self.user.assert_icommand(['ils', '-l'], 'STDOUT') # Debugging.
+            self.assertFalse(lib.replica_exists(self.user, data_object_1, 0))
+            self.assert_quotas(col, expected_number_of_objects=1, expected_size_in_bytes=0)
+
+            # Create a new data object. This will result in the data object count increasing by 1.
+            self.user.assert_icommand(['itouch', data_object_1])
+            self.user.assert_icommand(['ils', '-l'], 'STDOUT') # Debugging.
+            self.assertTrue(lib.replica_exists(self.user, data_object_1, 0))
+            self.assert_quotas(col, expected_number_of_objects=2, expected_size_in_bytes=0)
+
+            # Now, show that attempting to create another data object via itouch will result in
+            # a quota violation.
+            data_object_2 = os.path.join(col, 'baz')
+            quota_violation_msg = ['Logical Quotas Policy Violation: Adding object exceeds maximum number of objects limit']
+            self.user.assert_icommand(['itouch', data_object_2], 'STDOUT', quota_violation_msg)
+            self.user.assert_icommand(['ils', '-l'], 'STDOUT') # Debugging.
+            self.assertFalse(lib.replica_exists(self.user, data_object_2, 0))
+            self.assert_quotas(col, expected_number_of_objects=2, expected_size_in_bytes=0)
+
+            # Try to add another data object to prove the plugin is doing its job.
+            data_object_3 = os.path.join(col, 'another_baz')
+            self.user.assert_icommand(['itouch', data_object_3], 'STDOUT', quota_violation_msg)
+            self.user.assert_icommand(['ils', '-l'], 'STDOUT') # Debugging.
+            self.assertFalse(lib.replica_exists(self.user, data_object_3, 0))
+            self.assert_quotas(col, expected_number_of_objects=2, expected_size_in_bytes=0)
+
+            # Show that removing and adding a data object still update the quotas. This step
+            # is here to make sure the handling of the touch PEPs doesn't cause the plugin
+            # to enter an unstable state.
+            self.assertTrue(lib.replica_exists(self.user, data_object_0, 0))
+            self.user.assert_icommand(['irm', '-f', data_object_0])
+            self.user.assert_icommand(['ils', '-l'], 'STDOUT') # Debugging.
+            self.assertFalse(lib.replica_exists(self.user, data_object_0, 0))
+            self.assert_quotas(col, expected_number_of_objects=1, expected_size_in_bytes=0)
+
+            self.user.assert_icommand(['itouch', data_object_0])
+            self.user.assert_icommand(['ils', '-l'], 'STDOUT') # Debugging.
+            self.assertTrue(lib.replica_exists(self.user, data_object_0, 0))
+            self.assert_quotas(col, expected_number_of_objects=2, expected_size_in_bytes=0)
+
+            self.user.assert_icommand(['itouch', data_object_2], 'STDOUT', quota_violation_msg)
+            self.user.assert_icommand(['ils', '-l'], 'STDOUT') # Debugging.
+            self.assertFalse(lib.replica_exists(self.user, data_object_2, 0))
+            self.assert_quotas(col, expected_number_of_objects=2, expected_size_in_bytes=0)
 
     @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
     def test_plugin_does_not_return_an_error_when_exec_rule_is_invoked_by_non_administrators__issue_63(self):

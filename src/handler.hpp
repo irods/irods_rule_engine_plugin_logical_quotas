@@ -301,6 +301,7 @@ namespace irods::handler
 	  private:
 		inline static std::string path_;
 		inline static bool exists_ = false;
+		inline static bool update_count_ = false;
 	}; // class pep_api_touch
 } // namespace irods::handler
 
