@@ -1602,6 +1602,7 @@ namespace irods::handler
 	{
 		path_.clear();
 		exists_ = false;
+		update_count_ = false;
 	}
 
 	auto pep_api_touch::pre(const std::string& _instance_name,
@@ -1620,6 +1621,30 @@ namespace irods::handler
 			const auto json_input = nlohmann::json::parse(std::string_view(static_cast<char*>(input->buf), input->len));
 			path_ = json_input.at("logical_path").get<std::string>();
 			exists_ = fs::server::exists(conn, path_);
+
+			if (!exists_) {
+				const auto options_iter = json_input.find("options");
+				if (options_iter != std::end(json_input)) {
+					// Setting the no_create property to true disables the creation of data objects.
+					auto option_iter = options_iter->find("no_create");
+					if (option_iter != std::end(*options_iter) && option_iter->get<bool>()) {
+						return CODE(RULE_ENGINE_CONTINUE);
+					}
+
+					// Inclusion of the replica_number property disables the creation of data objects.
+					if (options_iter->contains("replica_number")) {
+						return CODE(RULE_ENGINE_CONTINUE);
+					}
+				}
+
+				const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+
+				for_each_monitored_collection(conn, attrs, path_, [&attrs](auto&, auto& _info) {
+					throw_if_maximum_number_of_data_objects_violation(attrs, _info, 1);
+				});
+
+				update_count_ = true;
+			}
 		}
 		catch (const fs::filesystem_error& e) {
 			rodsLog(LOG_ERROR, e.what());
@@ -1642,6 +1667,10 @@ namespace irods::handler
 	                         MsParamArray* _ms_param_array,
 	                         irods::callback& _effect_handler) -> irods::error
 	{
+		if (!update_count_) {
+			return CODE(RULE_ENGINE_CONTINUE);
+		}
+
 		try {
 			auto& rei = get_rei(_effect_handler);
 			auto& conn = *rei.rsComm;
