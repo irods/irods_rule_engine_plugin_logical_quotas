@@ -13,6 +13,7 @@
 #include <irods/irods_query.hpp>
 #include <irods/irods_re_plugin.hpp>
 #include <irods/irods_state_table.h>
+#include <irods/irods_version.h>
 #include <irods/modAVUMetadata.h>
 #include <irods/msParam.h>
 #include <irods/objDesc.hpp>
@@ -603,7 +604,11 @@ namespace irods::handler
 
 			std::vector args{path + '%'};
 			auto query = irods::experimental::query_builder{}
+#if IRODS_VERSION_INTEGER < 5000002
 			                 .type(irods::experimental::query_type::specific)
+#else
+			                 .type(irods::query_type::specific)
+#endif
 			                 .bind_arguments(args)
 			                 .build<RsComm>(*rei.rsComm, "logical_quotas_count_data_objects_recursive");
 
@@ -642,7 +647,11 @@ namespace irods::handler
 
 			std::vector args{path + '%'};
 			auto query = irods::experimental::query_builder{}
+#if IRODS_VERSION_INTEGER < 5000002
 			                 .type(irods::experimental::query_type::specific)
+#else
+			                 .type(irods::query_type::specific)
+#endif
 			                 .bind_arguments(args)
 			                 .build<RsComm>(*rei.rsComm, "logical_quotas_sum_data_object_sizes_recursive");
 
