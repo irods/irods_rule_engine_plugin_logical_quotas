@@ -604,7 +604,7 @@ namespace irods::handler
 
 			std::vector args{path + '%'};
 			auto query = irods::experimental::query_builder{}
-#if IRODS_VERSION_INTEGER < 5000002
+#if IRODS_VERSION_INTEGER < 5000090
 			                 .type(irods::experimental::query_type::specific)
 #else
 			                 .type(irods::query_type::specific)
@@ -647,7 +647,7 @@ namespace irods::handler
 
 			std::vector args{path + '%'};
 			auto query = irods::experimental::query_builder{}
-#if IRODS_VERSION_INTEGER < 5000002
+#if IRODS_VERSION_INTEGER < 5000090
 			                 .type(irods::experimental::query_type::specific)
 #else
 			                 .type(irods::query_type::specific)
