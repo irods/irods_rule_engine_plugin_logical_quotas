@@ -124,10 +124,11 @@ namespace
 	template <typename T>
 	auto get_pointer(std::list<boost::any>& _rule_arguments, int _index = 2) -> T*;
 
+	// Executes a function on each parent collection monitored by the plugin.
 	template <typename Function>
 	auto for_each_monitored_collection(RcComm& _conn,
 	                                   const irods::attributes& _attrs,
-	                                   fs::path _collection,
+	                                   fs::path _logical_path,
 	                                   Function _func) -> void;
 
 	template <typename Value, typename Map>
@@ -321,10 +322,10 @@ namespace
 	template <typename Function>
 	auto for_each_monitored_collection(RcComm& _conn,
 	                                   const irods::attributes& _attrs,
-	                                   fs::path _collection,
+	                                   fs::path _logical_path,
 	                                   Function _func) -> void
 	{
-		for (auto collection = get_monitored_parent_collection(_conn, _attrs, _collection.parent_path()); collection;
+		for (auto collection = get_monitored_parent_collection(_conn, _attrs, _logical_path.parent_path()); collection;
 		     collection = get_monitored_parent_collection(_conn, _attrs, collection->parent_path()))
 		{
 			auto info = get_monitored_collection_info(_conn, _attrs, *collection);
@@ -1500,7 +1501,7 @@ namespace irods::handler
 			irods::experimental::client_connection conn;
 
 			for_each_monitored_collection(conn, attrs, path_, [&](auto& _collection, const auto& _info) {
-				std::string p = fs::path{path_}.parent_path();
+				std::string p = _collection.string();
 				std::list<boost::any> args{&p};
 				const auto err = logical_quotas_recalculate_totals(
 					_instance_name, _instance_configs, args, _ms_param_array, _effect_handler);
