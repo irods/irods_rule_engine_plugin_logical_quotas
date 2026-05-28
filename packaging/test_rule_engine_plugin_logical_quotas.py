@@ -985,6 +985,55 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
                 self.admin1.run_icommand(['ichmod', '-M', 'own', self.admin1.username, test_collection])
                 self.admin1.run_icommand(['irmdir', test_collection])
 
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_streaming_operations_update_quota_values_for_parent_collections__issue_144(self):
+        config = IrodsConfig()
+
+        with lib.file_backed_up(config.server_config_path):
+            self.enable_rule_engine_plugin(config)
+
+            # Create a collection tree matching the following:
+            #   /session_collection     (monitored without limit)
+            #       /lq_issue_144_1     (monitored without limit)
+            #           /col_1
+            #               /col_2
+            #       /lq_issue_144_2     (monitored without limit)
+            monitored_parent_collection_1 = self.user.session_collection
+            monitored_parent_collection_2 = f'{monitored_parent_collection_1}/lq_issue_144_1'
+            monitored_parent_collection_3 = f'{monitored_parent_collection_1}/lq_issue_144_2'
+
+            not_monitored_collection_1 = f'{monitored_parent_collection_2}/col_1'
+            not_monitored_collection_2 = f'{not_monitored_collection_1}/col_2'
+
+            self.user.assert_icommand(['imkdir', '-p', not_monitored_collection_2])
+            self.user.assert_icommand(['imkdir', monitored_parent_collection_3])
+
+            self.logical_quotas_start_monitoring_collection(monitored_parent_collection_1)
+            self.logical_quotas_start_monitoring_collection(monitored_parent_collection_2)
+            self.logical_quotas_start_monitoring_collection(monitored_parent_collection_3)
+
+            # Show the plugin tracks data objects created via the streaming operations.
+            data_object_1 = f'{not_monitored_collection_1}/file1.txt'
+            data_object_1_content = 'hello'
+            self.user.assert_icommand(['istream', 'write', data_object_1], input=data_object_1_content)
+            self.assert_quotas(monitored_parent_collection_1, 1, len(data_object_1_content))
+            self.assert_quotas(monitored_parent_collection_2, 1, len(data_object_1_content))
+            self.assert_quotas(monitored_parent_collection_3, 0, 0)
+
+            data_object_2 = f'{not_monitored_collection_2}/file2.txt'
+            data_object_2_content = 'hello again'
+            self.user.assert_icommand(['istream', 'write', data_object_2], input=data_object_2_content)
+            self.assert_quotas(monitored_parent_collection_1, 2, len(data_object_1_content) + len(data_object_2_content))
+            self.assert_quotas(monitored_parent_collection_2, 2, len(data_object_1_content) + len(data_object_2_content))
+            self.assert_quotas(monitored_parent_collection_3, 0, 0)
+
+            data_object_3 = f'{monitored_parent_collection_3}/file3.txt'
+            data_object_3_content = 'yet another hello'
+            self.user.assert_icommand(['istream', 'write', data_object_3], input=data_object_3_content)
+            self.assert_quotas(monitored_parent_collection_1, 3, len(data_object_1_content) + len(data_object_2_content) + len(data_object_3_content))
+            self.assert_quotas(monitored_parent_collection_2, 2, len(data_object_1_content) + len(data_object_2_content))
+            self.assert_quotas(monitored_parent_collection_3, 1, len(data_object_3_content))
+
     #
     # Utility Functions
     #
