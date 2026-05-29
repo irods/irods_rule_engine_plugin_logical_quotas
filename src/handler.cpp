@@ -24,9 +24,6 @@
 #include <irods/scoped_client_identity.hpp>
 #include <irods/scoped_permission.hpp>
 
-#define IRODS_FILESYSTEM_ENABLE_SERVER_SIDE_API
-#include <irods/filesystem.hpp>
-
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
@@ -92,7 +89,7 @@ namespace
 	// Function Prototypes
 	//
 
-	auto get_monitored_collection_info(rsComm_t& _conn, const irods::attributes& _attrs, const fs::path& _p)
+	auto get_monitored_collection_info(RcComm& _conn, const irods::attributes& _attrs, const fs::path& _p)
 		-> quotas_info_type;
 
 	auto throw_if_maximum_number_of_data_objects_violation(const irods::attributes& _attrs,
@@ -103,14 +100,14 @@ namespace
 	                                              const quotas_info_type& _tracking_info,
 	                                              size_type _delta) -> void;
 
-	auto is_monitored_collection(rsComm_t& _conn, const irods::attributes& _attrs, const fs::path& _p) -> bool;
+	auto is_monitored_collection(RcComm& _conn, const irods::attributes& _attrs, const fs::path& _p) -> bool;
 
-	auto get_monitored_parent_collection(rsComm_t& _conn, const irods::attributes& _attrs, fs::path _p)
+	auto get_monitored_parent_collection(RcComm& _conn, const irods::attributes& _attrs, fs::path _p)
 		-> std::optional<fs::path>;
 
-	auto compute_data_object_count_and_size(rsComm_t& _conn, fs::path _p) -> std::tuple<size_type, size_type>;
+	auto compute_data_object_count_and_size(RcComm& _conn, fs::path _p) -> std::tuple<size_type, size_type>;
 
-	auto update_data_object_count_and_size(rsComm_t& _conn,
+	auto update_data_object_count_and_size(RcComm& _conn,
 	                                       const irods::attributes& _attrs,
 	                                       const fs::path& _collection,
 	                                       const quotas_info_type& _info,
@@ -128,7 +125,7 @@ namespace
 	auto get_pointer(std::list<boost::any>& _rule_arguments, int _index = 2) -> T*;
 
 	template <typename Function>
-	auto for_each_monitored_collection(rsComm_t& _conn,
+	auto for_each_monitored_collection(RcComm& _conn,
 	                                   const irods::attributes& _attrs,
 	                                   fs::path _collection,
 	                                   Function _func) -> void;
@@ -143,7 +140,7 @@ namespace
 
 	auto throw_if_string_cannot_be_cast_to_an_integer(const std::string& s, const std::string& error_msg) -> void;
 
-	auto is_group(rsComm_t& _conn, const std::string_view _entity_name) -> bool;
+	auto is_group(RcComm& _conn, const std::string_view _entity_name) -> bool;
 
 	auto log_logical_quotas_exception(const irods::logical_quotas_error& e, irods::callback& _effect_handler)
 		-> irods::error;
@@ -156,7 +153,7 @@ namespace
 	// Function Implementations
 	//
 
-	auto get_monitored_collection_info(rsComm_t& _conn, const irods::attributes& _attrs, const fs::path& _p)
+	auto get_monitored_collection_info(RcComm& _conn, const irods::attributes& _attrs, const fs::path& _p)
 		-> quotas_info_type
 	{
 		quotas_info_type info;
@@ -210,7 +207,7 @@ namespace
 		}
 	}
 
-	auto is_monitored_collection(rsComm_t& _conn, const irods::attributes& _attrs, const fs::path& _p) -> bool
+	auto is_monitored_collection(RcComm& _conn, const irods::attributes& _attrs, const fs::path& _p) -> bool
 	{
 		const auto gql =
 			fmt::format("select META_COLL_ATTR_NAME where COLL_NAME = '{}' and META_COLL_ATTR_NAME = '{}' || = '{}'",
@@ -225,7 +222,7 @@ namespace
 		return false;
 	}
 
-	auto get_monitored_parent_collection(rsComm_t& _conn, const irods::attributes& _attrs, fs::path _p)
+	auto get_monitored_parent_collection(RcComm& _conn, const irods::attributes& _attrs, fs::path _p)
 		-> std::optional<fs::path>
 	{
 		for (; !_p.empty(); _p = _p.parent_path()) {
@@ -240,7 +237,7 @@ namespace
 		return std::nullopt;
 	}
 
-	auto compute_data_object_count_and_size(rsComm_t& _conn, fs::path _p) -> std::tuple<size_type, size_type>
+	auto compute_data_object_count_and_size(RcComm& _conn, fs::path _p) -> std::tuple<size_type, size_type>
 	{
 		size_type objects = 0;
 		size_type bytes = 0;
@@ -256,7 +253,7 @@ namespace
 		return {objects, bytes};
 	}
 
-	auto update_data_object_count_and_size(rsComm_t& _conn,
+	auto update_data_object_count_and_size(RcComm& _conn,
 	                                       const irods::attributes& _attrs,
 	                                       const fs::path& _collection,
 	                                       const quotas_info_type& _info,
@@ -268,7 +265,7 @@ namespace
 
 			if (const auto iter = _info.find(objects_attr); std::end(_info) != iter) {
 				const auto new_object_count = std::to_string(iter->second + _data_objects_delta);
-				fs::server::set_metadata(_conn, _collection, {objects_attr, new_object_count});
+				fs::client::set_metadata(fs::admin, _conn, _collection, {objects_attr, new_object_count});
 			}
 		}
 
@@ -277,7 +274,7 @@ namespace
 
 			if (const auto iter = _info.find(size_attr); std::end(_info) != iter) {
 				const auto new_size_in_bytes = std::to_string(iter->second + _size_in_bytes_delta);
-				fs::server::set_metadata(_conn, _collection, {size_attr, new_size_in_bytes});
+				fs::client::set_metadata(fs::admin, _conn, _collection, {size_attr, new_size_in_bytes});
 			}
 		}
 	}
@@ -293,17 +290,15 @@ namespace
 			auto args_iter = std::begin(_rule_arguments);
 			const auto& path = *boost::any_cast<std::string*>(*args_iter);
 
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
-
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+
+			irods::experimental::client_connection conn;
 			const auto info = get_monitored_collection_info(conn, attrs, path);
 
-			irods::experimental::client_connection client_conn;
 			for (auto&& attribute_name : _func(attrs)) {
 				if (const auto iter = info.find(*attribute_name); iter != std::end(info)) {
 					const auto value = get_attribute_value<size_type>(info, *attribute_name);
-					fs::client::remove_metadata(fs::admin, client_conn, path, {*attribute_name, std::to_string(value)});
+					fs::client::remove_metadata(fs::admin, conn, path, {*attribute_name, std::to_string(value)});
 				}
 			}
 		}
@@ -324,7 +319,7 @@ namespace
 	}
 
 	template <typename Function>
-	auto for_each_monitored_collection(rsComm_t& _conn,
+	auto for_each_monitored_collection(RcComm& _conn,
 	                                   const irods::attributes& _attrs,
 	                                   fs::path _collection,
 	                                   Function _func) -> void
@@ -383,7 +378,7 @@ namespace
 		}
 	}
 
-	auto is_group(rsComm_t& _conn, const std::string_view _entity_name) -> bool
+	auto is_group(RcComm& _conn, const std::string_view _entity_name) -> bool
 	{
 		const auto gql = fmt::format("select USER_TYPE where USER_NAME = '{}'", _entity_name);
 
@@ -423,14 +418,15 @@ namespace
 
 		std::string value_out;
 
-		// Query will be performed using client connection, ie. with administrative privilege.
-
 		// Initialize query conditions and column for selection.
 		GenQueryInp input{};
 		GenQueryOut* output{};
 		addInxIval(&input.selectInp, COL_META_COLL_ATTR_VALUE, 0);
-		addInxVal(&input.sqlCondInp, COL_COLL_NAME, fmt::format("= '{}'", _coll_path).c_str());
-		addInxVal(&input.sqlCondInp, COL_META_COLL_ATTR_NAME, fmt::format("= '{}'", _quota_name).c_str());
+		addInxVal(
+			&input.sqlCondInp, COL_COLL_NAME, fmt::format("= '{}'", irods::single_quotes_to_hex(_coll_path)).c_str());
+		addInxVal(&input.sqlCondInp,
+		          COL_META_COLL_ATTR_NAME,
+		          fmt::format("= '{}'", irods::single_quotes_to_hex(_quota_name)).c_str());
 
 		input.maxRows = MAX_SQL_ROWS;
 
@@ -463,7 +459,6 @@ namespace
 
 		return std::make_tuple(value_out, ret_error);
 	}
-
 } // anonymous namespace
 
 namespace irods::handler
@@ -475,12 +470,11 @@ namespace irods::handler
 	                                          irods::callback& _effect_handler) -> irods::error
 	{
 		try {
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-
 			auto args_iter = std::begin(_rule_arguments);
 			const auto& path = *boost::any_cast<std::string*>(*args_iter);
+
+			irods::experimental::client_connection conn;
 
 			if (!is_monitored_collection(conn, attrs, path)) {
 				auto msg = fmt::format("Logical Quotas Policy: [{}] is not a monitored collection.", path);
@@ -493,14 +487,12 @@ namespace irods::handler
 			auto quota_status = nlohmann::json::object(); // Holds the current quota values.
 
 			// Fetch the current quota values for the collection.
-			irods::experimental::client_connection client_conn;
 			for (const auto& quota_name : {attrs.maximum_number_of_data_objects(),
 			                               attrs.maximum_size_in_bytes(),
 			                               attrs.total_number_of_data_objects(),
 			                               attrs.total_size_in_bytes()})
 			{
-				auto [result, err] =
-					get_quota_value_for_collection(static_cast<RcComm&>(client_conn), path, quota_name);
+				auto [result, err] = get_quota_value_for_collection(static_cast<RcComm&>(conn), path, quota_name);
 				if (!err.ok()) {
 					return err;
 				}
@@ -599,10 +591,9 @@ namespace irods::handler
 		try {
 			auto args_iter = std::begin(_rule_arguments);
 			const auto& path = *boost::any_cast<std::string*>(*args_iter);
-
-			auto& rei = get_rei(_effect_handler);
-
 			std::vector args{path + '%'};
+			irods::experimental::client_connection conn;
+
 			auto query = irods::experimental::query_builder{}
 #if IRODS_VERSION_INTEGER < 5000090
 			                 .type(irods::experimental::query_type::specific)
@@ -610,7 +601,7 @@ namespace irods::handler
 			                 .type(irods::query_type::specific)
 #endif
 			                 .bind_arguments(args)
-			                 .build<RsComm>(*rei.rsComm, "logical_quotas_count_data_objects_recursive");
+			                 .build<RcComm>(conn, "logical_quotas_count_data_objects_recursive");
 
 			std::string objects;
 			for (auto&& row : query) {
@@ -619,7 +610,6 @@ namespace irods::handler
 
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
-			irods::experimental::client_connection conn;
 			fs::client::set_metadata(
 				fs::admin, conn, path, {attrs.total_number_of_data_objects(), objects.empty() ? "0" : objects});
 		}
@@ -642,10 +632,9 @@ namespace irods::handler
 		try {
 			auto args_iter = std::begin(_rule_arguments);
 			const auto& path = *boost::any_cast<std::string*>(*args_iter);
-
-			auto& rei = get_rei(_effect_handler);
-
 			std::vector args{path + '%'};
+			irods::experimental::client_connection conn;
+
 			auto query = irods::experimental::query_builder{}
 #if IRODS_VERSION_INTEGER < 5000090
 			                 .type(irods::experimental::query_type::specific)
@@ -653,7 +642,7 @@ namespace irods::handler
 			                 .type(irods::query_type::specific)
 #endif
 			                 .bind_arguments(args)
-			                 .build<RsComm>(*rei.rsComm, "logical_quotas_sum_data_object_sizes_recursive");
+			                 .build<RcComm>(conn, "logical_quotas_sum_data_object_sizes_recursive");
 
 			std::string bytes;
 			for (auto&& row : query) {
@@ -662,7 +651,6 @@ namespace irods::handler
 
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
-			irods::experimental::client_connection conn;
 			fs::client::set_metadata(fs::admin, conn, path, {attrs.total_size_in_bytes(), bytes.empty() ? "0" : bytes});
 		}
 		catch (const irods::exception& e) {
@@ -711,9 +699,8 @@ namespace irods::handler
 			throw_if_string_cannot_be_cast_to_an_integer(max_objects, msg);
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
-			irods::experimental::client_connection client_conn;
-			fs::client::set_metadata(
-				fs::admin, client_conn, path, {attrs.maximum_number_of_data_objects(), max_objects});
+			irods::experimental::client_connection conn;
+			fs::client::set_metadata(fs::admin, conn, path, {attrs.maximum_number_of_data_objects(), max_objects});
 		}
 		catch (const irods::exception& e) {
 			return log_irods_exception(e, _effect_handler);
@@ -741,8 +728,8 @@ namespace irods::handler
 			throw_if_string_cannot_be_cast_to_an_integer(max_bytes, msg);
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
-			irods::experimental::client_connection client_conn;
-			fs::client::set_metadata(fs::admin, client_conn, path, {attrs.maximum_size_in_bytes(), max_bytes});
+			irods::experimental::client_connection conn;
+			fs::client::set_metadata(fs::admin, conn, path, {attrs.maximum_size_in_bytes(), max_bytes});
 		}
 		catch (const irods::exception& e) {
 			return log_irods_exception(e, _effect_handler);
@@ -818,16 +805,16 @@ namespace irods::handler
 
 		try {
 			auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+			irods::experimental::client_connection conn;
 
-			if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath);
-			    fs::server::is_data_object(status)) {
+			if (const auto status = fs::client::status(conn, input->srcDataObjInp.objPath);
+			    fs::client::is_data_object(status))
+			{
 				data_objects_ = 1;
-				size_in_bytes_ = fs::server::data_object_size(conn, input->srcDataObjInp.objPath);
+				size_in_bytes_ = fs::client::data_object_size(conn, input->srcDataObjInp.objPath);
 			}
-			else if (fs::server::is_collection(status)) {
+			else if (fs::client::is_collection(status)) {
 				std::tie(data_objects_, size_in_bytes_) =
 					compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
 			}
@@ -862,10 +849,8 @@ namespace irods::handler
 	{
 		try {
 			auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-
+			irods::experimental::client_connection conn;
 			for_each_monitored_collection(conn,
 			                              attrs,
 			                              input->destDataObjInp.objPath,
@@ -892,10 +877,8 @@ namespace irods::handler
 	{
 		try {
 			auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-
+			irods::experimental::client_connection conn;
 			for_each_monitored_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
 				throw_if_maximum_number_of_data_objects_violation(attrs, _info, 1);
 			});
@@ -921,9 +904,9 @@ namespace irods::handler
 	{
 		try {
 			auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+
+			irods::experimental::client_connection conn;
 
 			for_each_monitored_collection(
 				conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
@@ -956,13 +939,12 @@ namespace irods::handler
 
 		try {
 			auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+			irods::experimental::client_connection conn;
 
-			if (fs::server::exists(*rei.rsComm, input->objPath)) {
+			if (fs::client::exists(conn, input->objPath)) {
 				forced_overwrite_ = true;
-				const size_type existing_size = fs::server::data_object_size(conn, input->objPath);
+				const size_type existing_size = fs::client::data_object_size(conn, input->objPath);
 				size_diff_ = static_cast<size_type>(input->dataSize) - existing_size;
 
 				for_each_monitored_collection(
@@ -998,9 +980,8 @@ namespace irods::handler
 	{
 		try {
 			auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+			irods::experimental::client_connection conn;
 
 			if (forced_overwrite_) {
 				for_each_monitored_collection(
@@ -1049,16 +1030,16 @@ namespace irods::handler
 				return CODE(RULE_ENGINE_CONTINUE);
 			}
 
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+			irods::experimental::client_connection conn;
 
-			if (const auto status = fs::server::status(conn, input->srcDataObjInp.objPath);
-			    fs::server::is_data_object(status)) {
+			if (const auto status = fs::client::status(conn, input->srcDataObjInp.objPath);
+			    fs::client::is_data_object(status))
+			{
 				data_objects_ = 1;
-				size_in_bytes_ = fs::server::data_object_size(conn, input->srcDataObjInp.objPath);
+				size_in_bytes_ = fs::client::data_object_size(conn, input->srcDataObjInp.objPath);
 			}
-			else if (fs::server::is_collection(status)) {
+			else if (fs::client::is_collection(status)) {
 				std::tie(data_objects_, size_in_bytes_) =
 					compute_data_object_count_and_size(conn, input->srcDataObjInp.objPath);
 			}
@@ -1134,9 +1115,9 @@ namespace irods::handler
 
 		try {
 			auto* input = get_pointer<dataObjCopyInp_t>(_rule_arguments);
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+
+			irods::experimental::client_connection conn;
 			auto src_path = get_monitored_parent_collection(conn, attrs, input->srcDataObjInp.objPath);
 			auto dst_path = get_monitored_parent_collection(conn, attrs, input->destDataObjInp.objPath);
 
@@ -1234,13 +1215,12 @@ namespace irods::handler
 
 		try {
 			auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+			irods::experimental::client_connection conn;
 
 			if (auto collection = get_monitored_parent_collection(conn, attrs, input->objPath); collection) {
 				try {
-					size_in_bytes_ = fs::server::data_object_size(conn, input->objPath);
+					size_in_bytes_ = fs::client::data_object_size(conn, input->objPath);
 				}
 				catch (const fs::filesystem_error& e) {
 					// The filesystem library's data_object_size() function will throw an exception
@@ -1282,10 +1262,8 @@ namespace irods::handler
 	{
 		try {
 			auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-
+			irods::experimental::client_connection conn;
 			for_each_monitored_collection(
 				conn, attrs, input->objPath, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
 					update_data_object_count_and_size(conn, attrs, _collection, _info, -1, -size_in_bytes_);
@@ -1309,12 +1287,11 @@ namespace irods::handler
 	{
 		try {
 			auto* input = get_pointer<dataObjInp_t>(_rule_arguments);
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+			irods::experimental::client_connection conn;
 
 			if (O_CREAT == (input->openFlags & O_CREAT)) {
-				if (!fs::server::exists(*rei.rsComm, input->objPath)) {
+				if (!fs::client::exists(conn, input->objPath)) {
 					for_each_monitored_collection(conn, attrs, input->objPath, [&attrs, input](auto&, auto& _info) {
 						throw_if_maximum_number_of_data_objects_violation(attrs, _info, 1);
 					});
@@ -1391,16 +1368,15 @@ namespace irods::handler
 	                                  irods::callback& _effect_handler) -> irods::error
 	{
 		try {
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
-			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-
 			// If the path is empty, either the pre-PEP detected that the client opened an
 			// existing data object for reading and returned early, or an error occurred.
 			// This avoids unnecessary catalog updates.
 			if (path_.empty()) {
 				return CODE(RULE_ENGINE_CONTINUE);
 			}
+
+			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+			irods::experimental::client_connection conn;
 
 			for_each_monitored_collection(conn, attrs, path_, [&](auto& _collection, const auto& _info) {
 				std::string p = fs::path{path_}.parent_path();
@@ -1430,16 +1406,14 @@ namespace irods::handler
 	                                  irods::callback& _effect_handler) -> irods::error
 	{
 		try {
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto* input = get_pointer<modAVUMetadataInp_t>(_rule_arguments);
+			irods::experimental::client_connection conn;
 
-			if (std::string_view{"add"} != input->arg0 || !fs::server::is_collection(conn, input->arg2)) {
+			if (std::string_view{"add"} != input->arg0 || !fs::client::is_collection(conn, input->arg2)) {
 				return CODE(RULE_ENGINE_CONTINUE);
 			}
 
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-
 			const auto attr_list = {&attrs.maximum_number_of_data_objects(),
 			                        &attrs.maximum_size_in_bytes(),
 			                        &attrs.total_number_of_data_objects(),
@@ -1456,7 +1430,7 @@ namespace irods::handler
 				                             irods::single_quotes_to_hex(input->arg2),
 				                             **iter);
 
-				if (irods::query{&conn, gql}.size() > 0) {
+				if (irods::query{static_cast<RcComm*>(conn), gql}.size() > 0) {
 					return ERROR(SYS_NOT_ALLOWED, "Logical Quotas Policy: Metadata attribute name already defined.");
 				}
 			}
@@ -1515,16 +1489,15 @@ namespace irods::handler
 	                                 irods::callback& _effect_handler) -> irods::error
 	{
 		try {
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
-			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-
 			// If the path is empty, either the pre-PEP detected that the client opened an
 			// existing data object for reading and returned early, or an error occurred.
 			// This avoids unnecessary catalog updates.
 			if (path_.empty()) {
 				return CODE(RULE_ENGINE_CONTINUE);
 			}
+
+			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
+			irods::experimental::client_connection conn;
 
 			for_each_monitored_collection(conn, attrs, path_, [&](auto& _collection, const auto& _info) {
 				std::string p = fs::path{path_}.parent_path();
@@ -1563,10 +1536,8 @@ namespace irods::handler
 
 		try {
 			auto* input = get_pointer<collInp_t>(_rule_arguments);
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-
+			irods::experimental::client_connection conn;
 			if (auto collection = get_monitored_parent_collection(conn, attrs, input->collName); collection) {
 				std::tie(data_objects_, size_in_bytes_) = compute_data_object_count_and_size(conn, input->collName);
 			}
@@ -1589,10 +1560,8 @@ namespace irods::handler
 	{
 		try {
 			auto* input = get_pointer<collInp_t>(_rule_arguments);
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
 			const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
-
+			irods::experimental::client_connection conn;
 			for_each_monitored_collection(
 				conn, attrs, input->collName, [&conn, &attrs, input](const auto& _collection, const auto& _info) {
 					update_data_object_count_and_size(conn, attrs, _collection, _info, -data_objects_, -size_in_bytes_);
@@ -1625,12 +1594,10 @@ namespace irods::handler
 
 		try {
 			auto* input = get_pointer<BytesBuf>(_rule_arguments);
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
-
 			const auto json_input = nlohmann::json::parse(std::string_view(static_cast<char*>(input->buf), input->len));
 			path_ = json_input.at("logical_path").get<std::string>();
-			exists_ = fs::server::exists(conn, path_);
+			irods::experimental::client_connection conn;
+			exists_ = fs::client::exists(conn, path_);
 
 			if (!exists_) {
 				const auto options_iter = json_input.find("options");
@@ -1683,12 +1650,11 @@ namespace irods::handler
 		}
 
 		try {
-			auto& rei = get_rei(_effect_handler);
-			auto& conn = *rei.rsComm;
+			irods::experimental::client_connection conn;
 
 			// Verify that the target object was created. This is necessary because the touch API
 			// does not always result in a new data object (i.e. no_create JSON option).
-			if (!exists_ && fs::server::exists(conn, path_)) {
+			if (!exists_ && fs::client::exists(conn, path_)) {
 				const auto& attrs = get_instance_config(_instance_configs, _instance_name).attributes();
 
 				for_each_monitored_collection(
