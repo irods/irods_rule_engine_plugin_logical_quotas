@@ -418,14 +418,15 @@ namespace
 
 		std::string value_out;
 
-		// Query will be performed using client connection, ie. with administrative privilege.
-
 		// Initialize query conditions and column for selection.
 		GenQueryInp input{};
 		GenQueryOut* output{};
 		addInxIval(&input.selectInp, COL_META_COLL_ATTR_VALUE, 0);
-		addInxVal(&input.sqlCondInp, COL_COLL_NAME, fmt::format("= '{}'", _coll_path).c_str());
-		addInxVal(&input.sqlCondInp, COL_META_COLL_ATTR_NAME, fmt::format("= '{}'", _quota_name).c_str());
+		addInxVal(
+			&input.sqlCondInp, COL_COLL_NAME, fmt::format("= '{}'", irods::single_quotes_to_hex(_coll_path)).c_str());
+		addInxVal(&input.sqlCondInp,
+		          COL_META_COLL_ATTR_NAME,
+		          fmt::format("= '{}'", irods::single_quotes_to_hex(_quota_name)).c_str());
 
 		input.maxRows = MAX_SQL_ROWS;
 
