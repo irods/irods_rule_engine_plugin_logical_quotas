@@ -54,9 +54,11 @@ def copy_output_packages(build_directory, output_root_directory):
 def main(build_directory, output_root_directory, irods_packages_root_directory, externals_directory, irods_package_version):
     install_building_dependencies(externals_directory)
     if irods_package_version is not None:
+        print(f'Using release packages matching version [{irods_package_version}].')
         irods_python_ci_utilities.install_irods_packages_repository()
         irods_python_ci_utilities.install_released_irods_dev_and_runtime_packages(irods_package_version)
     elif irods_packages_root_directory:
+        print(f'Using packages from local directory [{irods_packages_root_directory}].')
         irods_python_ci_utilities.install_irods_dev_and_runtime_packages(irods_packages_root_directory)
     build_directory = os.path.abspath(build_directory or tempfile.mkdtemp(prefix='irods_logical_quotas_plugin_build_directory'))
     irods_python_ci_utilities.subprocess_get_output(['cmake', os.path.dirname(os.path.realpath(__file__))], check_rc=True, cwd=build_directory)
@@ -70,7 +72,7 @@ if __name__ == '__main__':
     parser.add_option('--output_root_directory')
     parser.add_option('--irods_packages_root_directory')
     parser.add_option('--externals_packages_directory')
-    parser.add_option('--irods_package_version')
+    parser.add_option('--irods_package_version') # Takes precedence over --irods_packages_root_directory.
     options, _ = parser.parse_args()
 
     main(options.build_directory,
