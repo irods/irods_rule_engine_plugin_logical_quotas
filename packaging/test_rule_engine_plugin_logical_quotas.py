@@ -944,6 +944,43 @@ class Test_Rule_Engine_Plugin_Logical_Quotas(session.make_sessions_mixin(admins,
             self.assert_quotas(monitored_parent_collection_2, 2, len(data_object_1_content) + len(data_object_2_content))
             self.assert_quotas(monitored_parent_collection_3, 1, len(data_object_3_content))
 
+    @unittest.skipIf(test.settings.RUN_IN_TOPOLOGY, "Skip for Topology Testing")
+    def test_logical_quotas_get_collection_status_returns_status_for_logical_paths_containing_single_quotes__issue_157(self):
+        with self.rule_engine_plugin_enabled():
+            # Create a collection with a single quote in its name and start monitoring it.
+            col = f"{self.user.session_collection}/issue'15'7"
+            self.user.assert_icommand(['imkdir', col])
+            self.logical_quotas_start_monitoring_collection(col)
+
+            # Add a data object to the collection.
+            data_object = f'{col}/file.txt'
+            self.user.assert_icommand(['itouch', data_object])
+
+            # Get the quota status for the collection.
+            expected_output = [
+                f'"{self.maximum_number_of_data_objects_attribute()}":""',
+                f'"{self.maximum_size_in_bytes_attribute()}":""',
+                f'"{self.total_number_of_data_objects_attribute()}":"1"',
+                f'"{self.total_size_in_bytes_attribute()}":"0"',
+            ]
+            op = json.dumps({'operation': 'logical_quotas_get_collection_status', 'collection': col})
+            self.admin1.assert_icommand(
+                ['irule', '-r', 'irods_rule_engine_plugin-logical_quotas-instance', op, 'null', 'ruleExecOut'], 'STDOUT', expected_output)
+
+            # Apply limits and show that they appear in the output.
+            max_data_objects = '5'
+            max_bytes = '100'
+            self.logical_quotas_set_maximum_number_of_data_objects(col, max_data_objects)
+            self.logical_quotas_set_maximum_size_in_bytes(col, max_bytes)
+            expected_output = [
+                f'"{self.maximum_number_of_data_objects_attribute()}":"{max_data_objects}"',
+                f'"{self.maximum_size_in_bytes_attribute()}":"{max_bytes}"',
+                f'"{self.total_number_of_data_objects_attribute()}":"1"',
+                f'"{self.total_size_in_bytes_attribute()}":"0"',
+            ]
+            self.admin1.assert_icommand(
+                ['irule', '-r', 'irods_rule_engine_plugin-logical_quotas-instance', op, 'null', 'ruleExecOut'], 'STDOUT', expected_output)
+
     #
     # Utility Functions
     #
