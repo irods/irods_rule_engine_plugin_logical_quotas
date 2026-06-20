@@ -11,6 +11,14 @@ and this project **only** adheres to the following _(as defined at [Semantic Ver
 > - MINOR version when you add functionality in a backward compatible manner
 > - PATCH version when you make backward compatible bug fixes
 
+## [5.1.1] - 2026-06-20
+
+This release reverts a commit to fix the `logical_quotas_get_collection_status` operation.
+
+### Fixed
+
+- Revert logic that unnecessarily escapes single quotes in GenQuery (#157).
+
 ## [5.1.0] - 2026-06-20
 
 This release fixes issues with quota updates stemming from server redirects, permissions, and single quotes in logical paths.
