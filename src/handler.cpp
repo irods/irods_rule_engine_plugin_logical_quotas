@@ -419,8 +419,6 @@ namespace
 
 		std::string value_out;
 
-		// Query will be performed using client connection, ie. with administrative privilege.
-
 		// Initialize query conditions and column for selection.
 		GenQueryInp input{};
 		GenQueryOut* output{};
